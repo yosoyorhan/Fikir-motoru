@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="tr" class="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Otonom Tartışma Paneli</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        /* Light Theme */
+        --bg-primary-light: #f9f9f9; /* Hafif kırık beyaz */
+        --bg-secondary-light: #ffffff;
+        --text-primary-light: #1d1d1f;
+        --text-secondary-light: #6e6e73;
+        --border-light: #e5e5e5;
+        --panel-shadow-light: 0 12px 24px 0 rgba(0, 0, 0, 0.08);
+        
+        /* Dark Theme */
+        --bg-primary-dark: #121212;
+        --bg-secondary-dark: #1e1e1e;
+        --text-primary-dark: #f5f5f7;
+        --text-secondary-dark: #a1a1a6;
+        --border-dark: #3a3a3c;
+        --panel-shadow-dark: 0 12px 24px 0 rgba(0, 0, 0, 0.25);
+
+        /* Gradients */
+        --gradient-action: linear-gradient(to right, #FF8C00, #E91E63);
+        --gradient-success: linear-gradient(to right, #34D399, #22D3EE); /* Updated to vibrant green/turquoise */
+        --gradient-strategy: linear-gradient(to right, #2196F3, #9C27B0);
+      }
+
+      html.light {
+        --bg-primary: var(--bg-primary-light);
+        --bg-secondary: var(--bg-secondary-light);
+        --text-primary: var(--text-primary-light);
+        --text-secondary: var(--text-secondary-light);
+        --border-color: var(--border-light);
+        --panel-shadow: var(--panel-shadow-light);
+        --chat-bubble-ai-bg: #ffffff;
+        --chat-bubble-user-bg: #e9ecef;
+      }
+
+      html.dark {
+        --bg-primary: var(--bg-primary-dark);
+        --bg-secondary: var(--bg-secondary-dark);
+        --text-primary: var(--text-primary-dark);
+        --text-secondary: var(--text-secondary-dark);
+        --border-color: var(--border-dark);
+        --panel-shadow: var(--panel-shadow-dark);
+        --chat-bubble-ai-bg: var(--bg-secondary-dark);
+        --chat-bubble-user-bg: #3b3b3e;
+      }
+      
+      body {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+
+      .gradient-button {
+        background-image: var(--gradient-action);
+        color: white;
+        border: none;
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+      }
+      .gradient-button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      }
+      .gradient-success {
+        background-image: var(--gradient-success);
+      }
+      .gradient-strategy-button {
+        background-image: var(--gradient-strategy);
+        color: white;
+        border-color: transparent !important;
+      }
+      .gradient-strategy-button:hover {
+          filter: brightness(110%);
+      }
+      
+      .modal-card {
+        background: var(--bg-secondary);
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--panel-shadow);
+      }
+       
+      .font-light-heading {
+        font-weight: 300;
+      }
+      
+      #matrix-canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+      }
+
+      /* Custom Toggle Switch */
+      .switch {
+        position: relative;
+        display: inline-block;
+        width: 52px;
+        height: 32px;
+      }
+      .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+      }
+      .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #e5e7eb; /* gray-200 */
+        transition: .4s;
+        border-radius: 32px;
+      }
+      .slider:before {
+        position: absolute;
+        content: "";
+        height: 24px;
+        width: 24px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      }
+      input:checked + .slider {
+        background-image: var(--gradient-strategy);
+      }
+       html.dark .slider {
+         background-color: #4b5563; /* gray-600 */
+       }
+      input:checked + .slider:before {
+        transform: translateX(20px);
+      }
+
+      /* Segmented Control */
+      .segmented-control {
+        display: inline-flex;
+        background-color: #f3f4f6; /* gray-100 */
+        border-radius: 9999px;
+        padding: 4px;
+      }
+      .segmented-control button {
+        padding: 4px 12px;
+        border-radius: 9999px;
+        border: none;
+        background: transparent;
+        font-size: 13px;
+        font-weight: 500;
+        color: #6B7280; /* gray-500 */
+        transition: all 0.2s ease-in-out;
+      }
+      .segmented-control button.active {
+        background-image: var(--gradient-strategy);
+        color: white;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+      }
+
+      html.dark .segmented-control {
+        background-color: #374151; /* gray-700 */
+      }
+       html.dark .segmented-control button {
+        color: #9CA3AF; /* gray-400 */
+      }
+      html.dark .segmented-control button.active {
+        background-image: var(--gradient-strategy);
+      }
+      
+      /* Animations */
+      @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+      .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+      @keyframes scale-in { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+      .animate-scale-in { animation: scale-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+      
+      @keyframes pulse-icon {
+        0%, 100% { transform: scale(1); opacity: 0.8; }
+        50% { transform: scale(1.1); opacity: 1; }
+      }
+      .animate-pulse-icon {
+        animation: pulse-icon 2.5s infinite ease-in-out;
+      }
+
+      @keyframes pulse-persona {
+        0%, 100% { 
+          opacity: 0.7;
+        }
+        50% { 
+          opacity: 1;
+        }
+      }
+      .animate-pulse-persona {
+        animation: pulse-persona 1.8s infinite cubic-bezier(0.4, 0, 0.6, 1);
+      }
+
+      /* Chat Bubble Animations */
+      @keyframes slide-fade-in-left {
+        from { opacity: 0; transform: translateX(-20px) scale(0.95); }
+        to { opacity: 1; transform: translateX(0) scale(1); }
+      }
+      @keyframes slide-fade-in-right {
+        from { opacity: 0; transform: translateX(20px) scale(0.95); }
+        to { opacity: 1; transform: translateX(0) scale(1); }
+      }
+      .animate-chat-bubble-ai { animation: slide-fade-in-left 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+      .animate-chat-bubble-user { animation: slide-fade-in-right 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards; }
+
+      /* Glitch Effect for Flash Mode */
+      .glitch {
+        position: relative;
+        font-size: 2.5rem;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        z-index: 1;
+      }
+      .glitch:before,
+      .glitch:after {
+        content: attr(data-text);
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: var(--bg-primary);
+        overflow: hidden;
+        clip-path: inset(50% 50% 50% 50%);
+      }
+
+      /* Light Theme Glitch */
+      html.light .glitch {
+        color: var(--text-primary-light);
+        text-shadow: 1px 1px 2px var(--border-light);
+      }
+      html.light .glitch:before {
+        left: -2px;
+        text-shadow: 2px 0 rgba(0, 0, 255, 0.6);
+        animation: glitch-anim-1 2s infinite linear alternate-reverse;
+      }
+      html.light .glitch:after {
+        left: 2px;
+        text-shadow: -2px 0 rgba(255, 0, 0, 0.6);
+        animation: glitch-anim-2 1.5s infinite linear alternate-reverse;
+      }
+      
+      /* Dark Theme Glitch */
+      html.dark .glitch {
+         color: #00ffff;
+         text-shadow: 0 0 5px #00ffff, 0 0 10px #00ffff, 0 0 20px #ff00ff, 0 0 30px #ff00ff;
+      }
+      html.dark .glitch:before {
+        left: -2px;
+        text-shadow: 2px 0 #ff00ff;
+        animation: glitch-anim-1 2s infinite linear alternate-reverse;
+      }
+      html.dark .glitch:after {
+        left: 2px;
+        text-shadow: -2px 0 #00ffff;
+        animation: glitch-anim-2 1.5s infinite linear alternate-reverse;
+      }
+
+      @keyframes glitch-anim-1 {
+        0% { clip-path: inset(40% 0 60% 0); }
+        20% { clip-path: inset(10% 0 85% 0); }
+        40% { clip-path: inset(50% 0 30% 0); }
+        60% { clip-path: inset(80% 0 5% 0); }
+        80% { clip-path: inset(25% 0 70% 0); }
+        100% { clip-path: inset(50% 0 50% 0); }
+      }
+
+      @keyframes glitch-anim-2 {
+        0% { clip-path: inset(80% 0 10% 0); }
+        20% { clip-path: inset(5% 0 90% 0); }
+        40% { clip-path: inset(60% 0 20% 0); }
+        60% { clip-path: inset(90% 0 5% 0); }
+        80% { clip-path: inset(30% 0 65% 0); }
+        100% { clip-path: inset(50% 0 50% 0); }
+      }
+      
+      /* Floating Action Buttons */
+      .floating-actions {
+        position: fixed;
+        bottom: 2rem;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 20;
+        display: flex;
+        gap: 1rem;
+        background-color: var(--bg-secondary);
+        padding: 0.5rem 1rem;
+        border-radius: 9999px;
+        box-shadow: var(--panel-shadow);
+        border: 1px solid var(--border-color);
+      }
+      .floating-actions button {
+        padding: 0.5rem 1rem;
+        border-radius: 9999px;
+        border: none;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "marked": "https://aistudiocdn.com/marked@^14.0.0",
+    "uuid": "https://aistudiocdn.com/uuid@^13.0.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

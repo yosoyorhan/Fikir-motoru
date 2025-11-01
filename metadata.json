@@ -1,0 +1,5 @@
+{
+  "name": "Yapay Zeka Fikir Geliştirme Motoru",
+  "description": "Kullanıcı tarafından sağlanan genel bir konuyu analiz ederek niş ve uygulanabilir iş fikirleri üretmek için Geliştirici, Pazar Araştırmacısı ve Kullanıcı Personası'nı simüle eden bir yapay zeka ekibi arasında beyin fırtınası yürüten bir web uygulaması.",
+  "requestFramePermissions": []
+}
