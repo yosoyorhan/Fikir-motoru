@@ -281,14 +281,14 @@ const InputForm: React.FC<InputFormProps> = ({ onSubmit, onUserInput, appState, 
                     value={topicA}
                     onChange={(e) => setTopicA(e.target.value)}
                     placeholder="Konu A (örn: Veterinerlik)"
-                    className="flex-1 bg-transparent p-2 text-[var(--text-primary)] focus:outline-none placeholder:text-gray-400"
+                    className="flex-1 bg-transparent p-2 text-[var(--text-primary)] focus:outline-none placeholder:text-gray-400 min-w-0"
                 />
                 <span className="text-gray-400 text-2xl font-light mx-2">+</span>
                 <input 
                     value={topicB}
                     onChange={(e) => setTopicB(e.target.value)}
                     placeholder="Konu B (isteğe bağlı)"
-                    className="flex-1 bg-transparent p-2 text-[var(--text-primary)] focus:outline-none placeholder:text-gray-400"
+                    className="flex-1 bg-transparent p-2 text-[var(--text-primary)] focus:outline-none placeholder:text-gray-400 min-w-0"
                 />
                 <button
                     type="submit"

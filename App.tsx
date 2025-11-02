@@ -11,6 +11,7 @@ import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, T
 import { generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { PERSONA_DEFINITIONS } from './constants';
+import Logo from './components/Logo';
 
 const App: React.FC = () => {
   // Core App State
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark');
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
 
   // Data State
   const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>(() => {
@@ -60,6 +62,8 @@ const App: React.FC = () => {
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const mainContentRef = useRef<HTMLElement>(null);
+  const prevScrollHeightRef = useRef<number | null>(null);
 
   useEffect(() => {
     document.documentElement.className = theme;
@@ -75,9 +79,43 @@ const App: React.FC = () => {
     localStorage.setItem('gameData', JSON.stringify(gameData));
   }, [gameData]);
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    setHasNewMessages(false);
+  }, []);
+
+  const handleScroll = useCallback(() => {
+      const mainEl = mainContentRef.current;
+      if (mainEl) {
+          // If user scrolls close to the bottom, hide the notification
+          const isAtBottom = mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight < 150;
+          if (isAtBottom) {
+              setHasNewMessages(false);
+          }
+      }
+  }, []);
+  
+  useEffect(() => {
+      const mainEl = mainContentRef.current;
+      if (!mainEl || messages.length === 0) return;
+  
+      const lastMessage = messages[messages.length - 1];
+      if (!lastMessage) return;
+  
+      const isFromUser = lastMessage.sender === Persona.User || lastMessage.sender === Persona.BigBoss;
+      
+      const prevScrollHeight = prevScrollHeightRef.current ?? 0;
+      const isScrolledToBottomBeforeUpdate = prevScrollHeight - mainEl.scrollTop - mainEl.clientHeight < 150;
+  
+      if (isFromUser || isScrolledToBottomBeforeUpdate) {
+          scrollToBottom();
+      } else {
+          setHasNewMessages(true);
+      }
+      
+      prevScrollHeightRef.current = mainEl.scrollHeight;
+  
+  }, [messages, scrollToBottom]);
 
   const addToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = `toast-${Date.now()}`;
@@ -431,11 +469,13 @@ const App: React.FC = () => {
           theme={theme}
           toggleTheme={toggleTheme}
         />
-        <main className="flex-1 overflow-y-auto p-4 flex flex-col">
+        <main ref={mainContentRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="container mx-auto max-w-3xl flex-1">
             {appState === AppState.IDLE && messages.length === 0 && (
                 <div className="text-center py-20 animate-fade-in">
-                    <h1 className="text-4xl font-bold mb-4">Fikir Motoru</h1>
+                    <div className="flex justify-center mb-4">
+                      <Logo className="[&>span]:text-4xl [&>svg]:w-10 [&>svg]:h-10" />
+                    </div>
                     <p className="text-[var(--text-secondary)]">Yenilikçi iş fikirleri bulmak için yapay zeka ekibinizi toplayın.</p>
                 </div>
             )}
@@ -486,6 +526,20 @@ const App: React.FC = () => {
           </div>
         </main>
         
+        {hasNewMessages && (
+            <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-20">
+                <button
+                    onClick={scrollToBottom}
+                    className="py-2 px-5 rounded-full bg-blue-500 text-white font-semibold shadow-lg text-sm animate-fade-in hover:bg-blue-600 transition-colors flex items-center gap-2"
+                >
+                    Yeni Mesajlar
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" />
+                    </svg>
+                </button>
+            </div>
+        )}
+
         <InputForm 
           onSubmit={handleNewBrainstorm} 
           onUserInput={handleUserInput} 

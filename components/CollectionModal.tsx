@@ -59,10 +59,10 @@ const KanbanColumn: React.FC<{
       onDragOver={(e) => { e.preventDefault(); setIsOver(true); }}
       onDragLeave={() => setIsOver(false)}
       onDrop={handleDrop}
-      className={`w-1/3 flex-shrink-0 bg-[var(--bg-secondary)]/50 rounded-lg p-4 transition-colors ${isOver ? 'bg-cyan-500/20' : ''}`}
+      className={`w-full lg:w-1/3 flex-shrink-0 bg-[var(--bg-secondary)]/50 rounded-lg p-4 transition-colors ${isOver ? 'bg-cyan-500/20' : ''}`}
     >
       <h3 className="font-bold text-lg text-center mb-4 pb-2 border-b border-[var(--border-color)]">{status}</h3>
-      <div className="space-y-4 h-[calc(100%-4rem)] overflow-y-auto">
+      <div className="space-y-4 lg:h-[calc(100%-4rem)] lg:overflow-y-auto">
         {ideas.map(idea => <KanbanCard key={idea.id} idea={idea} onSetMainFocus={onSetMainFocus} />)}
       </div>
     </div>
@@ -87,7 +87,7 @@ const CollectionModal: React.FC<CollectionModalProps> = ({
              <button onClick={onClose} className="text-[var(--text-secondary)] hover:text-[var(--text-primary)] text-3xl font-light">&times;</button>
         </div>
         
-        <div className="p-6 flex-1 overflow-hidden">
+        <div className="p-6 flex-1 overflow-y-auto">
           {savedIdeas.length === 0 ? (
             <div className="text-center text-[var(--text-secondary)] py-10 flex flex-col items-center justify-center h-full">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 opacity-30 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
@@ -97,7 +97,7 @@ const CollectionModal: React.FC<CollectionModalProps> = ({
               <p className="text-sm mt-1">İlk parlak fikrinizi bulmak için motoru çalıştırın!</p>
             </div>
           ) : (
-            <div className="flex gap-6 h-full">
+            <div className="flex flex-col lg:flex-row gap-6 lg:h-full">
               {columns.map(status => (
                 <KanbanColumn
                   key={status}

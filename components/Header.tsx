@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppState, Theme } from '../types';
+import Logo from './Logo';
 
 interface HeaderProps {
   appState: AppState;
@@ -19,9 +20,7 @@ const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrain
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-[var(--text-primary)]">
-              Fikir Motoru
-            </h1>
+            <Logo />
              <button 
               onClick={onNewBrainstormClick} 
               title="Yeni Fikir Fırtınası Başlat" 
