@@ -6,10 +6,11 @@ import CollectionModal from './components/CollectionModal';
 import IdeaFoundModal from './components/IdeaFoundModal';
 import SessionEndModal from './components/SessionEndModal';
 import IdeaDetailModal from './components/IdeaDetailModal';
+import SettingsModal from './components/SettingsModal';
 import Toast from './components/Toast';
 import ImagePreview from './components/ImagePreview';
 import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea } from './types';
-import { generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
+import { generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage, isApiKeySet, setApiKey } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { PERSONA_DEFINITIONS } from './constants';
 
@@ -23,9 +24,13 @@ const App: React.FC = () => {
   // UI State
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark');
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [chatBackground, setChatBackground] = useState<string | null>(null);
+
+  // API Key State
+  const [apiKey, setApiKeyState] = useState<string | null>(() => localStorage.getItem('googleApiKey'));
 
 
   // Data State
@@ -71,6 +76,14 @@ const App: React.FC = () => {
     document.documentElement.className = theme;
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    // Check for API key on initial load
+    if (!isApiKeySet()) {
+      setIsSettingsOpen(true);
+      addToast('Lütfen başlamak için Google Gemini API anahtarınızı girin.', 'error');
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('savedIdeas', JSON.stringify(savedIdeas));
@@ -192,25 +205,41 @@ const App: React.FC = () => {
         const thinkingId = `msg-${Date.now()}`;
         setMessages(prev => [...prev, { id: thinkingId, text: '', sender: currentPersona, timestamp: Date.now(), isThinking: true }]);
         
-        const responseText = await generatePersonaTurn(
-            currentHistory,
-            currentPersona,
-            currentTopic,
-            currentSettings.personaFocus,
-            currentSettings.isDeepDive,
-            currentSettings.isBigBossActive,
-            currentSettings.bigBossInfluence
-        );
+        let fullResponse = '';
+        try {
+            const stream = generatePersonaTurn(
+                currentHistory,
+                currentPersona,
+                currentTopic,
+                currentSettings.personaFocus,
+                currentSettings.isDeepDive,
+                currentSettings.isBigBossActive,
+                currentSettings.bigBossInfluence
+            );
+
+            for await (const chunk of stream) {
+                if (signal.aborted) break;
+                fullResponse += chunk;
+                setMessages(prev => prev.map(m => m.id === thinkingId ? { ...m, text: fullResponse, isThinking: false } : m));
+            }
+
+        } catch (error) {
+            console.error(error);
+            addToast('Mesaj oluşturulurken bir hata oluştu.', 'error');
+            setMessages(prev => prev.filter(m => m.id !== thinkingId)); // Remove the thinking message
+            break; // Exit the loop on error
+        }
 
         if (signal.aborted) break;
 
-        const newMessage: Message = { id: thinkingId, text: responseText, sender: currentPersona, timestamp: Date.now(), isThinking: false };
+        const newMessage: Message = { id: thinkingId, text: fullResponse, sender: currentPersona, timestamp: Date.now(), isThinking: false };
+        // Final update to ensure the message is correctly set
         setMessages(prev => prev.map(m => m.id === thinkingId ? newMessage : m));
         currentHistory.push(newMessage);
         
-        const upperResponse = responseText.toUpperCase();
+        const upperResponse = fullResponse.toUpperCase();
         if (upperResponse.includes('SANIRIM BİR FİKİR BULDUM!') || upperResponse.includes('[FİKİR BULDUM]')) {
-             const ideaContent = responseText.substring(upperResponse.lastIndexOf('BULDUM!') + 7).trim();
+             const ideaContent = fullResponse.substring(upperResponse.lastIndexOf('BULDUM!') + 7).trim();
              const ideaLines = ideaContent.trim().split('\n').filter(Boolean);
              const title = ideaLines.find(l => l.toLowerCase().startsWith('başlık:'))?.replace(/Başlık:\s*/i, '') || 'Başlıksız Fikir';
              const description = ideaLines.filter(l => !l.toLowerCase().startsWith('başlık:')).join('\n').replace(/Açıklama:\s*/i, '').trim();
@@ -347,9 +376,16 @@ const App: React.FC = () => {
             { id: moderatorThinkingId, text: '', sender: Persona.Moderator, timestamp: Date.now(), isThinking: true }
         ]);
         
-        const moderatorResponse = await generatePersonaTurn(
+        let moderatorResponse = '';
+        const stream = generatePersonaTurn(
             currentHistory, Persona.Moderator, topic, personaFocus, isDeepDive, isBigBossActive, bigBossInfluence
         );
+
+        for await (const chunk of stream) {
+            if (abortControllerRef.current.signal.aborted) { setAppState(AppState.IDLE); return; }
+            moderatorResponse += chunk;
+            setMessages(prev => prev.map(m => m.id === moderatorThinkingId ? { ...m, text: moderatorResponse, isThinking: false } : m));
+        }
 
         if (abortControllerRef.current.signal.aborted) { setAppState(AppState.IDLE); return; }
 
@@ -511,7 +547,11 @@ const App: React.FC = () => {
     setIsCollectionOpen(false);
   };
   const handleIdeaStatusChange = (ideaId: string, newStatus: IdeaStatus) => setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
-
+  const handleSaveApiKey = (newApiKey: string) => {
+    setApiKey(newApiKey);
+    setApiKeyState(newApiKey);
+    addToast('API Anahtarı başarıyla kaydedildi!', 'success');
+  };
   return (
     <div 
       className={`app-container bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans transition-all duration-500 ${chatBackground ? 'chat-with-bg' : ''}`}
@@ -522,6 +562,11 @@ const App: React.FC = () => {
           appState={appState}
           onCollectionClick={() => setIsCollectionOpen(true)}
           onNewBrainstormClick={() => {
+            if (!isApiKeySet()) {
+              setIsSettingsOpen(true);
+              addToast('Lütfen bir API anahtarı girerek başlayın.', 'error');
+              return;
+            }
             handleStop();
             setMessages([]);
             setFoundIdea(null);
@@ -532,6 +577,7 @@ const App: React.FC = () => {
           onIntervene={handleIntervene}
           theme={theme}
           toggleTheme={toggleTheme}
+          onSettingsClick={() => setIsSettingsOpen(true)}
         />
         <main ref={mainContentRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="container mx-auto max-w-3xl flex-1">
@@ -638,6 +684,12 @@ const App: React.FC = () => {
         onClose={() => setDetailedIdea(null)}
       />
       <CollectionModal isOpen={isCollectionOpen} onClose={() => setIsCollectionOpen(false)} savedIdeas={savedIdeas} onLoadIdea={() => {}} onSetMainFocus={handleSetMainFocus} onIdeaStatusChange={handleIdeaStatusChange} />
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSaveApiKey}
+        currentApiKey={apiKey}
+      />
 
       <div className="fixed top-5 right-5 z-[100] space-y-2">
         {toasts.map(toast => <Toast key={toast.id} {...toast} onClose={() => removeToast(toast.id)} />)}
