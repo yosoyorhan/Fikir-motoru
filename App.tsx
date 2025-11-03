@@ -7,11 +7,11 @@ import IdeaFoundModal from './components/IdeaFoundModal';
 import SessionEndModal from './components/SessionEndModal';
 import IdeaDetailModal from './components/IdeaDetailModal';
 import Toast from './components/Toast';
+import ImagePreview from './components/ImagePreview';
 import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea } from './types';
-import { generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea } from './services/geminiService';
+import { generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { PERSONA_DEFINITIONS } from './constants';
-import Logo from './components/Logo';
 
 const App: React.FC = () => {
   // Core App State
@@ -25,6 +25,8 @@ const App: React.FC = () => {
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [chatBackground, setChatBackground] = useState<string | null>(null);
+
 
   // Data State
   const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>(() => {
@@ -102,7 +104,7 @@ const App: React.FC = () => {
       const lastMessage = messages[messages.length - 1];
       if (!lastMessage) return;
   
-      const isFromUser = lastMessage.sender === Persona.User || lastMessage.sender === Persona.BigBoss;
+      const isFromUser = lastMessage.sender === Persona.User || lastMessage.sender === Persona.BigBoss || lastMessage.sender === Persona.Cerevo;
       
       const prevScrollHeight = prevScrollHeightRef.current ?? 0;
       const isScrolledToBottomBeforeUpdate = prevScrollHeight - mainEl.scrollTop - mainEl.clientHeight < 150;
@@ -281,15 +283,14 @@ const App: React.FC = () => {
   };
 
 
-  const handleNewBrainstorm = useCallback(async (topicA: string, topicB: string, isDeepDive: boolean, personaFocus: PersonaFocus, isConcise: boolean, isFlash: boolean, rememberVault: boolean, isBigBossActive: boolean, bigBossInfluence: number) => {
-    if (topicA.trim().toLowerCase() === 'hız sınırları koyalım') {
+  const handleNewBrainstorm = useCallback(async (topic: string, isDeepDive: boolean, personaFocus: PersonaFocus, isConcise: boolean, isFlash: boolean, rememberVault: boolean, isBigBossActive: boolean, bigBossInfluence: number) => {
+    if (topic.trim().toLowerCase() === 'hız sınırları koyalım') {
       handleRateLimitRequest();
       return;
     }
-  
-    const fullTopic = topicB ? `${topicA} ve ${topicB}` : topicA;
-    setCurrentTopic(fullTopic);
-    setMessages([]);
+    
+    setChatBackground(null);
+    setCurrentTopic(topic);
     setFoundIdea(null);
     setExtractedIdeas([]);
     const newSettings = { isDeepDive, personaFocus, isConcise, isFlash, isBigBossActive, bigBossInfluence };
@@ -298,9 +299,27 @@ const App: React.FC = () => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
 
+    // Generate background image, but don't wait for it
+    (async () => {
+      try {
+        const base64Image = await generateTopicImage(topic);
+        if (base64Image) {
+          setChatBackground(`data:image/png;base64,${base64Image}`);
+        }
+      } catch (error: any) {
+        const errorMessage = error.toString();
+        // Check for rate limit / quota exceeded error
+        if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('quota')) {
+            addToast('Görsel üretme limiti aşıldı. Fikir fırtınası devam ediyor.', 'error');
+        } else {
+            addToast('Arka plan görseli oluşturulamadı.', 'error');
+        }
+      }
+    })();
+
     const active = PERSONA_DEFINITIONS
         .map(p => p.persona)
-        .filter(p => personaFocus[p] !== 'Muted' && p !== Persona.HızSınırlarıUzmanı);
+        .filter(p => personaFocus[p] !== 'Muted' && p !== Persona.HızSınırlarıUzmanı && p !== Persona.Cerevo);
     const orderedActive = [Persona.Moderator, ...active.filter(p => p !== Persona.Moderator)];
     setActivePersonas([...new Set(orderedActive)]);
 
@@ -311,34 +330,70 @@ const App: React.FC = () => {
 
     if (isFlash || isConcise) {
         const script = await generateFullConversationScript(
-          fullTopic, personaFocus, isConcise, isDeepDive, isFlash, isBigBossActive, bigBossInfluence,
+          topic, personaFocus, isConcise, isDeepDive, isFlash, isBigBossActive, bigBossInfluence,
           mainFocusIdea, rememberVault ? vaultContents.current : undefined
         );
         setMainFocusIdea(undefined);
         await runBackgroundTask(script);
     } else {
-        const initialMessage: Message = { id: `msg-${Date.now()}`, text: `Yeni Fikir Fırtınası Başladı: **${fullTopic}**`, sender: Persona.System, timestamp: Date.now() };
+        const initialMessage: Message = { id: `msg-${Date.now()}`, text: `Yeni Fikir Fırtınası Başladı: **${topic}**`, sender: Persona.System, timestamp: Date.now() };
         setMainFocusIdea(undefined);
+        
+        const currentHistory = [...messages, initialMessage];
 
         const moderatorThinkingId = `msg-moderator-init-${Date.now()}`;
         setMessages([
-            initialMessage,
+            ...currentHistory,
             { id: moderatorThinkingId, text: '', sender: Persona.Moderator, timestamp: Date.now(), isThinking: true }
         ]);
         
         const moderatorResponse = await generatePersonaTurn(
-            [initialMessage], Persona.Moderator, fullTopic, personaFocus, isDeepDive, isBigBossActive, bigBossInfluence
+            currentHistory, Persona.Moderator, topic, personaFocus, isDeepDive, isBigBossActive, bigBossInfluence
         );
 
         if (abortControllerRef.current.signal.aborted) { setAppState(AppState.IDLE); return; }
 
         const moderatorMessage: Message = { id: moderatorThinkingId, text: moderatorResponse, sender: Persona.Moderator, timestamp: Date.now(), isThinking: false };
-        const initialHistory = [initialMessage, moderatorMessage];
-        setMessages(initialHistory);
+        const finalHistory = [...currentHistory, moderatorMessage];
+        setMessages(finalHistory);
         
-        runConversationLoop(initialHistory, 1);
+        runConversationLoop(finalHistory, 1);
     }
-  }, [runBackgroundTask, runConversationLoop, mainFocusIdea]);
+  }, [runBackgroundTask, runConversationLoop, mainFocusIdea, messages, addToast]);
+
+  const handleChatMessage = useCallback(async (messageText: string) => {
+    const userMessage: Message = {
+        id: `msg-user-${Date.now()}`,
+        text: messageText,
+        sender: Persona.User,
+        timestamp: Date.now()
+    };
+    const currentHistory = [...messages, userMessage];
+    
+    const thinkingId = `msg-cerevo-think-${Date.now()}`;
+    const thinkingMessage: Message = {
+        id: thinkingId,
+        text: '',
+        sender: Persona.Cerevo,
+        timestamp: Date.now(),
+        isThinking: true
+    };
+    
+    setMessages([...currentHistory, thinkingMessage]);
+
+    const cerevoResponseText = await generateCerevoResponse(currentHistory);
+
+    const cerevoMessage: Message = {
+        id: thinkingId,
+        text: cerevoResponseText,
+        sender: Persona.Cerevo,
+        timestamp: Date.now(),
+        isThinking: false
+    };
+
+    setMessages(prev => prev.map(m => m.id === thinkingId ? cerevoMessage : m));
+
+  }, [messages]);
 
   const handleUserInput = useCallback(async (inputText: string) => {
     const sender = currentSettings.isBigBossActive ? Persona.BigBoss : Persona.User;
@@ -361,6 +416,7 @@ const App: React.FC = () => {
   const handleStop = useCallback(() => {
       abortControllerRef.current?.abort();
       setAppState(AppState.IDLE);
+      setChatBackground(null);
       addToast('Beyin fırtınası durduruldu.', 'error');
   }, [addToast]);
 
@@ -378,6 +434,7 @@ const App: React.FC = () => {
     setFoundIdea(null);
     setAppState(AppState.IDLE);
     setMessages([]);
+    setChatBackground(null);
   }, [foundIdea, addToast]);
 
   const handleRejectIdea = useCallback(async () => {
@@ -426,6 +483,7 @@ const App: React.FC = () => {
     setAppState(AppState.IDLE);
     setMessages([]);
     setExtractedIdeas([]);
+    setChatBackground(null);
     addToast("Oturum sonlandırıldı.", "success");
   };
 
@@ -443,6 +501,8 @@ const App: React.FC = () => {
     setDetailedIdea(null);
   };
 
+  const isChatMode = appState === AppState.IDLE && messages.length > 0;
+
   const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
   const handleSetMainFocus = (idea: SavedIdea) => {
@@ -453,7 +513,10 @@ const App: React.FC = () => {
   const handleIdeaStatusChange = (ideaId: string, newStatus: IdeaStatus) => setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
 
   return (
-    <div className={`app-container bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans`}>
+    <div 
+      className={`app-container bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans transition-all duration-500 ${chatBackground ? 'chat-with-bg' : ''}`}
+      style={{ backgroundImage: chatBackground ? `url(${chatBackground})` : 'none' }}
+    >
       <div className="relative z-10 flex flex-col h-screen">
         <Header 
           appState={appState}
@@ -463,6 +526,7 @@ const App: React.FC = () => {
             setMessages([]);
             setFoundIdea(null);
             setExtractedIdeas([]);
+            setChatBackground(null);
           }}
           onStop={handleStop}
           onIntervene={handleIntervene}
@@ -472,14 +536,22 @@ const App: React.FC = () => {
         <main ref={mainContentRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="container mx-auto max-w-3xl flex-1">
             {appState === AppState.IDLE && messages.length === 0 && (
-                <div className="text-center py-20 animate-fade-in">
+                <div className="text-center py-20 animate-fade-in flex flex-col items-center justify-center">
                     <div className="flex justify-center mb-4">
-                      <Logo className="[&>span]:text-4xl [&>svg]:w-10 [&>svg]:h-10" />
+                      <img
+                        id="welcome-logo"
+                        src="https://psikominik.com/test/9980be65-439b-4908-a7b3-3c026ff24729_removalai_preview.png"
+                        alt="Cerevo Logo"
+                        className="w-24 h-24 animate-pulse-icon"
+                      />
                     </div>
-                    <p className="text-[var(--text-secondary)]">Yenilikçi iş fikirleri bulmak için yapay zeka ekibinizi toplayın.</p>
+                    <h1 className="text-3xl font-bold font-light-heading">Merhaba, ben Cerevo!</h1>
+                    <p className="text-[var(--text-secondary)] mt-2">
+                        Sohbet edebilir veya bir konu girip "Fikir Bul" butonuna basarak<br/>beyin fırtınası başlatabilirsin.
+                    </p>
                 </div>
             )}
-            {appState === AppState.PREPARING_TEAM && messages.length <= 1 && (
+            {appState === AppState.PREPARING_TEAM && (
               <div className="text-center py-20 animate-fade-in flex flex-col items-center justify-center">
                   <div className="flex items-center justify-center gap-3 mb-4">
                       {activePersonas.map((persona, index) => (
@@ -521,7 +593,7 @@ const App: React.FC = () => {
                 )}
               </div>
             )}
-            {messages.map(msg => <ChatBubble key={msg.id} message={msg} />)}
+            {messages.map(msg => <ChatBubble key={msg.id} message={msg} isChatMode={isChatMode} />)}
             <div ref={chatEndRef} />
           </div>
         </main>
@@ -541,13 +613,16 @@ const App: React.FC = () => {
         )}
 
         <InputForm 
-          onSubmit={handleNewBrainstorm} 
+          onFindIdea={handleNewBrainstorm} 
+          onChatMessage={handleChatMessage}
           onUserInput={handleUserInput} 
           appState={appState} 
           isBigBossActiveInSession={currentSettings.isBigBossActive}
         />
       </div>
       
+      {chatBackground && <ImagePreview imageUrl={chatBackground} />}
+
       <IdeaFoundModal isOpen={!!foundIdea} idea={foundIdea} onAccept={handleAcceptIdea} onReject={handleRejectIdea} />
       <SessionEndModal 
         isOpen={appState === AppState.SESSION_ENDED && extractedIdeas.length > 0}

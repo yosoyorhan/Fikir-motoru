@@ -11,6 +11,7 @@ export enum Persona {
   System = 'Sistem',
   User = 'Kullanıcı',
   HızSınırlarıUzmanı = 'Hız Sınırları Uzmanı',
+  Cerevo = 'Cerevo',
 }
 
 export enum AppState {

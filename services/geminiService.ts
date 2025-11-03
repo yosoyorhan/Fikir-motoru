@@ -1,12 +1,13 @@
 // This file handles all interactions with the Google Gemini API.
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import { Message, Persona, PersonaFocus, ExtractedIdea } from '../types';
 import { PERSONA_DEFINITIONS } from '../constants';
-import { v4 as uuidv4 } from 'uuid';
 
 
 // The API key is expected to be available in the environment variables.
 const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+
+const generateUniqueId = () => `id-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
 
 const getModelName = (isDeepDive: boolean, isFlash: boolean, isBigBossActive: boolean): string => {
     if (isFlash) {
@@ -22,7 +23,7 @@ const getModelName = (isDeepDive: boolean, isFlash: boolean, isBigBossActive: bo
 };
 
 const buildPersonaInstructions = (personaFocus: PersonaFocus, isConcise: boolean, isDeepDive: boolean, bigBossInfluence: number): string => {
-    return PERSONA_DEFINITIONS.map(p => {
+    return PERSONA_DEFINITIONS.filter(p => p.persona !== Persona.Cerevo).map(p => {
         let instruction = p.systemInstruction;
         
         if (p.persona === Persona.Moderator) {
@@ -166,59 +167,91 @@ Aşağıdaki tartışma geçmişini ve ana konuyu dikkate alarak, SADECE ${curre
         return response.text.trim();
     } catch (error) {
         console.error(`Error generating turn for ${currentPersona}:`, error);
-        return `Sistem: ${currentPersona} için yanıt oluşturulurken bir hata oluştu.`;
+        return `Sistem: Üzgünüm, ${currentPersona} rolü için bir yanıt oluşturulurken bir hata oluştu.`;
     }
 };
 
-export const summarizeAndExtractIdeas = async (history: Message[]): Promise<ExtractedIdea[]> => {
-    const systemInstruction = `Sen bir beyin fırtınası analiz uzmanısın. Görevin, verilen tartışma metnini analiz ederek ortaya çıkan en iyi 3 ila 5 potansiyel iş fikrini belirlemektir. Her fikir için kısa, akılda kalıcı bir başlık ve tek cümlelik bir özet oluştur. Çıktıyı, her biri 'title' ve 'summary' alanları içeren bir JSON dizisi olarak formatla. Başka hiçbir metin ekleme, sadece JSON dizisini döndür.`;
-    
-    const prompt = `Lütfen aşağıdaki beyin fırtınası konuşmasını analiz et ve potansiyel iş fikirlerini çıkar:\n\n${history.map(m => `${m.sender}: ${m.text}`).join('\n')}`;
+export const getRateLimitSummary = async (documentation: string): Promise<string> => {
+    const personaDef = PERSONA_DEFINITIONS.find(p => p.persona === Persona.HızSınırlarıUzmanı);
+    if (!personaDef) return "Uzman tanımı bulunamadı.";
+
+    const prompt = `Lütfen aşağıdaki API hız sınırı dokümantasyonunu analiz et ve ana noktaları özetle. Cevabını Markdown formatında, tablolar, listeler ve vurgular kullanarak yapılandır. Kullanıcının konuyu kolayca anlamasını sağla.\n\nDokümantasyon:\n${documentation}`;
 
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
             contents: prompt,
             config: {
+                systemInstruction: personaDef.systemInstruction
+            }
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error getting rate limit summary:", error);
+        return "Hız sınırı bilgileri alınırken bir hata oluştu.";
+    }
+};
+
+export const summarizeAndExtractIdeas = async (history: Message[]): Promise<ExtractedIdea[]> => {
+    const systemInstruction = `Sen, bir beyin fırtınası oturumunun sohbet geçmişini analiz eden bir yapay zeka asistanısın. Görevin, konuşma içinde geçen potansiyel iş fikirlerini belirlemek, her birine akılda kalıcı bir başlık vermek ve kısa bir özetini çıkarmaktır. Sonucu, belirtilen JSON şemasına uygun olarak döndür.`;
+    const prompt = `Lütfen aşağıdaki sohbet geçmişini analiz et ve 1 ila 3 adet potansiyel iş fikri çıkar. Her fikir için bir başlık ve kısa bir özet oluştur.
+
+### SOHBET GEÇMİŞİ ###
+${history.map(msg => `${msg.sender}: ${msg.text}`).join('\n')}
+`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
                 systemInstruction: systemInstruction,
-                temperature: 0.3,
                 responseMimeType: "application/json",
                 responseSchema: {
                     type: Type.ARRAY,
                     items: {
                         type: Type.OBJECT,
                         properties: {
-                            title: { type: Type.STRING },
-                            summary: { type: Type.STRING },
+                            title: {
+                                type: Type.STRING,
+                                description: "Fikir için akılda kalıcı bir başlık."
+                            },
+                            summary: {
+                                type: Type.STRING,
+                                description: "Fikrin 1-2 cümlelik kısa özeti."
+                            }
                         },
-                        required: ["title", "summary"],
-                    },
-                },
-            },
+                        required: ["title", "summary"]
+                    }
+                }
+            }
         });
-
-        const jsonString = response.text.trim();
-        const ideas: { title: string, summary: string }[] = JSON.parse(jsonString);
-        
-        return ideas.map(idea => ({ ...idea, id: uuidv4() }));
-
+        const ideas = JSON.parse(response.text);
+        return ideas.map((idea: any) => ({ ...idea, id: generateUniqueId() }));
     } catch (error) {
-        console.error('Error summarizing and extracting ideas:', error);
+        console.error("Error extracting ideas:", error);
         return [];
     }
 };
 
-export const detailElicitedIdea = async (history: Message[], ideaToDetail: ExtractedIdea): Promise<string> => {
-    const systemInstruction = `Sen bir iş stratejisi ve ürün yönetimi uzmanısın. Görevin, sana verilen bir beyin fırtınası geçmişi ve seçilen bir fikir özetinden yola çıkarak, bu fikir için detaylı bir konsept oluşturmaktır. Cevabını Markdown formatında, aşağıdaki başlıkları kullanarak yapılandır:
+export const detailElicitedIdea = async (history: Message[], idea: ExtractedIdea): Promise<string> => {
+    const systemInstruction = `Sen, bir iş fikrini detaylandıran bir strateji uzmanısın. Sana verilen sohbet geçmişini ve ana fikir başlığını kullanarak, bu fikir için detaylı bir konsept oluştur. Cevabını Markdown formatında yapılandır. Başlıklar, listeler ve vurgular kullan. Ele alınacak konular: Hedef Kitle, Problem, Çözüm, Gelir Modeli ve Pazarlama Stratejisi.`;
+    const prompt = `Lütfen aşağıdaki sohbet geçmişini ve ana fikri kullanarak detaylı bir iş konsepti oluştur.
 
-- **Konsept Özeti:** Fikri 2-3 cümleyle yeniden özetle.
-- **Anahtar Özellikler:** Ürünün veya hizmetin en önemli 3-5 özelliğini listele.
-- **Hedef Kitle:** Bu fikrin kimin sorununu çözdüğünü net bir şekilde tanımla.
-- **Gelir Modeli:** Fikrin nasıl para kazanabileceğine dair 1-2 potansiyel yol öner.
-- **Potansiyel Riskler:** Fikrin önündeki en büyük 2-3 engeli belirt.
-- **İlk Adım (MVP):** Fikri hayata geçirmek için atılması gereken ilk somut adımı veya en basit ürün versiyonunu tanımla.`;
+### SOHBET GEÇMİŞİ ###
+${history.map(msg => `${msg.sender}: ${msg.text}`).join('\n')}
 
-    const prompt = `Lütfen aşağıdaki beyin fırtınası konuşması ve seçilen fikri analiz ederek detaylı bir konsept oluştur.\n\n### TARTIŞMA GEÇMİŞİ ###\n${history.map(m => `${m.sender}: ${m.text}`).join('\n')}\n\n### DETAYLANDIRILACAK FİKİR ###\n**Başlık:** ${ideaToDetail.title}\n**Özet:** ${ideaToDetail.summary}`;
+### DETAYLANDIRILACAK FİKİR ###
+Başlık: ${idea.title}
+Özet: ${idea.summary}
+
+Lütfen bu fikri aşağıdaki başlıklar altında detaylandır:
+- **Hedef Kitle:**
+- **Çözülen Problem:**
+- **Sunulan Çözüm:**
+- **Olası Gelir Modelleri:**
+- **Pazarlama Stratejileri:**
+`;
 
     try {
         const response = await ai.models.generateContent({
@@ -226,62 +259,61 @@ export const detailElicitedIdea = async (history: Message[], ideaToDetail: Extra
             contents: prompt,
             config: {
                 systemInstruction: systemInstruction,
-                temperature: 0.6,
             }
         });
         return response.text.trim();
     } catch (error) {
-        console.error('Error detailing idea:', error);
+        console.error("Error detailing idea:", error);
         return "Fikir detaylandırılırken bir hata oluştu.";
     }
 };
 
+export const generateCerevoResponse = async (history: Message[]): Promise<string> => {
+    const cerevoDef = PERSONA_DEFINITIONS.find(p => p.persona === Persona.Cerevo);
+    if (!cerevoDef) return "Üzgünüm, şu an kendimi pek kendim gibi hissetmiyorum.";
 
-export const getRateLimitSummary = async (rateLimitDoc: string): Promise<string> => {
-    const expert = PERSONA_DEFINITIONS.find(p => p.persona === Persona.HızSınırlarıUzmanı);
-    if (!expert) return "Uzman tanımı bulunamadı.";
+    const prompt = `Aşağıdaki sohbet geçmişini dikkate alarak Cerevo olarak esprili ve zeki bir yanıt ver.
 
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro',
-            contents: rateLimitDoc,
-            config: {
-                systemInstruction: expert.systemInstruction,
-                temperature: 0.5,
-            }
-        });
-        return response.text.trim();
-    } catch (error) {
-        console.error(`Error generating rate limit summary:`, error);
-        return `Sistem: Hız limitleri özeti oluşturulurken bir hata oluştu. Lütfen daha sonra tekrar deneyin.`;
-    }
-};
+### SOHBET GEÇMİŞİ ###
+${history.map(msg => `${msg.sender}: ${msg.text}`).join('\n')}
 
-export const generateInspirationTopics = async (): Promise<string[]> => {
-    const systemInstruction = `Sen yaratıcı bir fikir küratörüsün. Görevin, teknoloji, toplum ve iş dünyasındaki güncel trendleri birleştirerek 3 adet yenilikçi ve ilgi çekici konu başlığı oluşturmaktır. Başlıklar kısa, öz ve beyin fırtınası için ilham verici olmalıdır. Cevabını sadece bir JSON dizisi olarak döndür. Örnek: ["Sürdürülebilir Kentsel Tarım", "Yapay Zeka Destekli Kişisel Gelişim", "Oyunlaştırılmış Finansal Okuryazarlık"]`;
+Cerevo:`;
 
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
-            contents: 'Bana 3 adet ilham verici ve birleştirilebilir konu başlığı öner.',
+            contents: prompt,
             config: {
-                systemInstruction,
-                temperature: 0.9,
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.ARRAY,
-                    items: {
-                        type: Type.STRING,
-                    },
-                },
+                systemInstruction: cerevoDef.systemInstruction
+            }
+        });
+        return response.text.trim();
+    } catch (error) {
+        console.error("Error generating Cerevo response:", error);
+        return "Beyin devrelerimde bir kısa devre oldu, bir saniye lütfen.";
+    }
+};
+
+export const generateTopicImage = async (topic: string): Promise<string | null> => {
+    const prompt = `Soyut, sanatsal, dijital sanat tarzında, koyu tonların ve neon renklerin hakim olduğu, "${topic}" konusunu anımsatan bir arka plan görseli. Minimalist ve estetik.`;
+    try {
+        const response = await ai.models.generateImages({
+            model: 'imagen-4.0-generate-001',
+            prompt: prompt,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: '16:9',
             },
         });
-        const jsonString = response.text.trim();
-        const topics: string[] = JSON.parse(jsonString);
-        return topics;
+
+        if (response.generatedImages && response.generatedImages.length > 0) {
+            return response.generatedImages[0].image.imageBytes;
+        }
+        return null;
     } catch (error) {
-        console.error('Error generating inspiration topics:', error);
-        // Return fallback topics on error
-        return ['Yapay Zeka Sanatı', 'Giyilebilir Sağlık Teknolojisi', 'Sanal Gerçeklikte Sosyal Etkileşim'];
+        console.error("Error generating topic image:", error);
+        // Rethrow the error to be handled in the component
+        throw error;
     }
 };

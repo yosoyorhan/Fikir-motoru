@@ -79,6 +79,23 @@ export const PersonaIcon: React.FC<{ persona: Persona; className?: string }> = (
         </svg>
       );
       break;
+     case Persona.Cerevo:
+      icon = (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+            <path d="M15.5 18.5c-2 0-3.5-1.5-3.5-3.5s1.5-3.5 3.5-3.5c3.5 0 3.5 5 0 7z" />
+            <path d="M8.5 11.5c2 0 3.5 1.5 3.5 3.5s-1.5 3.5-3.5 3.5c-3.5 0-3.5-5 0-7z" />
+            <path d="M12 11.5V3a2.5 2.5 0 0 0-5 0v3" />
+            <circle cx="7" cy="7" r="1.5" fill="currentColor" />
+            <path d="M12 12.5V21" />
+            <path d="M18 11a2.5 2.5 0 0 0-5 0v1.5" />
+            <circle cx="13" cy="12.5" r="1.5" fill="currentColor" />
+            <path d="M10 17a2.5 2.5 0 0 0-5 0v1" />
+            <circle cx="5" cy="18" r="1.5" fill="currentColor" />
+            <path d="M14 15.5a2.5 2.5 0 0 0 5 0V14" />
+            <circle cx="19" cy="14" r="1.5" fill="currentColor" />
+        </svg>
+      );
+      break;
     default:
       icon = (
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
@@ -99,11 +116,16 @@ export const PersonaIcon: React.FC<{ persona: Persona; className?: string }> = (
 
 interface ChatBubbleProps {
   message: Message;
+  isChatMode: boolean;
 }
 
-const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
+const ChatBubble: React.FC<ChatBubbleProps> = ({ message, isChatMode }) => {
   const isUser = message.sender === Persona.User || message.sender === Persona.BigBoss;
   const isSystem = message.sender === Persona.System;
+
+  // In chat mode, we don't show info for the main participants (User and Cerevo)
+  const isChatParticipant = message.sender === Persona.User || message.sender === Persona.Cerevo;
+  const showPersonaInfo = !isChatMode || !isChatParticipant;
 
   const bubbleClasses = isUser
     ? 'bg-[var(--chat-bubble-user-bg)]'
@@ -131,10 +153,10 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
 
   return (
     <div className={`flex items-end gap-3 my-4 animate-fade-in ${alignmentClasses}`}>
-      {!isUser && !isSystem && <PersonaIcon persona={message.sender} className="bg-[var(--bg-secondary)]" />}
+      {!isUser && !isSystem && showPersonaInfo && <PersonaIcon persona={message.sender} className="bg-[var(--bg-secondary)]" />}
 
       <div className={`max-w-xl lg:max-w-2xl rounded-2xl p-4 shadow-sm ${bubbleClasses}`}>
-        {!isSystem && <p className="font-bold text-sm mb-1 text-[var(--text-primary)]">{message.sender}</p>}
+        {!isSystem && showPersonaInfo && <p className="font-bold text-sm mb-1 text-[var(--text-primary)]">{message.sender}</p>}
         
         {message.isThinking ? (
           <LoadingSpinner />
@@ -146,7 +168,7 @@ const ChatBubble: React.FC<ChatBubbleProps> = ({ message }) => {
         )}
       </div>
 
-      {isUser && <PersonaIcon persona={message.sender} className="bg-[var(--bg-secondary)]" />}
+      {isUser && showPersonaInfo && <PersonaIcon persona={message.sender} className="bg-[var(--bg-secondary)]" />}
     </div>
   );
 };
