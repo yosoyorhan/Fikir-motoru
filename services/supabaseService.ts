@@ -8,22 +8,7 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-export const auth = {
-  signUp: (credentials: { email, password }) => supabase.auth.signUp(credentials),
-  signInWithPassword: (credentials: { email, password }) => supabase.auth.signInWithPassword(credentials),
-  signInWithGoogle: () => supabase.auth.signInWithOAuth({ provider: 'google' }),
-  signOut: () => supabase.auth.signOut(),
-  onAuthStateChange: (callback: (session: Session | null) => void) => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      callback(session);
-    });
-    return subscription;
-  },
-  getCurrentUser: async (): Promise<User | null> => {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.user ?? null;
-  }
-};
+export const auth = supabase.auth;
 
 export const db = {
   getProfile: async (userId: string): Promise<Profile | null> => {
@@ -62,7 +47,7 @@ export const db = {
     if (error) throw error;
     return data;
   },
-  updateIdeaStatus: async (ideaId: number, status: string, userId: string): Promise<SavedIdea> => {
+  updateIdeaStatus: async (ideaId: string, status: string, userId: string): Promise<SavedIdea> => {
     const { data, error } = await supabase
       .from('saved_ideas')
       .update({ status })

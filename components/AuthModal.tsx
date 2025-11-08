@@ -47,7 +47,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    await auth.signInWithGoogle();
+    await auth.signInWithOAuth({ provider: 'google' });
     setLoading(false);
   };
 

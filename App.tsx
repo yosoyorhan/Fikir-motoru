@@ -85,32 +85,35 @@ const App: React.FC = () => {
   }, [theme]);
 
   useEffect(() => {
-    setLoading(true);
-    try {
-      initializeGeminiClient(API_KEY);
-    } catch (error) {
-      console.error("API anahtarı ile başlatma başarısız oldu:", error);
-    }
-
-    const subscription = auth.onAuthStateChange(async (_event, session) => {
+    // Supabase'den gelen yanıtı önce 'authListener' gibi bir değişkene atıyoruz.
+    // Bu, TypeScript'in 'data' özelliğini daha doğru tanımasına yardımcı olur.
+    const authListener = auth.onAuthStateChange((_event, session) => {
       setSession(session);
+
       if (session) {
-        await fetchUserData(session.user.id);
+        // Kullanıcı varsa verilerini çek
+        fetchUserData(session.user.id);
       } else {
-        // Load from localStorage for guests
+        // Kullanıcı yoksa (çıkış yapmışsa), misafir verilerini localStorage'dan yükle
         const localIdeas = localStorage.getItem('savedIdeas');
         setSavedIdeas(localIdeas ? JSON.parse(localIdeas) : []);
+
         const localGameData = localStorage.getItem('gameData');
         setGameData(localGameData ? JSON.parse(localGameData) : { points: 100, level: 'Başlangıç' });
+
         setProfile(null);
       }
-      setIsAuthModalOpen(false); // Close modal on successful auth
+
+      setIsAuthModalOpen(false); // Başarılı işlemden sonra modalı kapat
       setLoading(false);
     });
 
+    // Cleanup fonksiyonu
     return () => {
-      subscription?.unsubscribe();
+      // ?. operatörü ile güvenli bir şekilde unsubscribe oluyoruz
+      authListener.data.subscription.unsubscribe();
     };
+  // Bağımlılık dizisi boş, sadece mount/unmount anında çalışacak
   }, []);
 
   const fetchUserData = async (userId: string) => {
@@ -603,7 +606,7 @@ const App: React.FC = () => {
     addToast(`"${idea.title}" ana odak olarak ayarlandı!`, 'success');
     setIsCollectionOpen(false);
   };
-  const handleIdeaStatusChange = async (ideaId: number, newStatus: IdeaStatus) => {
+  const handleIdeaStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
       if (session) {
           try {
               const updatedIdea = await db.updateIdeaStatus(ideaId, newStatus, session.user.id);
