@@ -46,13 +46,13 @@ body {
     transform: scale(1.05);
 }
 
-.lucide-icon-wrapper svg {
+button svg {
   stroke-width: 2px;
   color: #C9C9C9;
   transition: all 0.2s ease-in-out;
 }
 
-.lucide-icon-wrapper:hover svg {
+button:hover svg {
   transform: scale(1.1);
   color: #A78BFA;
   filter: drop-shadow(0 0 5px #7C3AED);

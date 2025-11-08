@@ -2,6 +2,7 @@ import React from 'react';
 import { AppState, Theme } from '../types';
 import Logo from './Logo';
 import Icon from './Icon';
+import { PlusCircle, StopCircle, Eye, Moon, Sun, Archive } from 'lucide-react';
 
 interface HeaderProps {
   appState: AppState;
@@ -27,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrain
               title="Yeni Fikir Fırtınası Başlat"
               className="p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
             >
-              <Icon name="plus-circle" size={24} strokeWidth={2} />
+              <Icon icon={PlusCircle} size={24} strokeWidth={2} />
             </button>
           </div>
           <div className="flex items-center gap-2 sm:gap-4">
@@ -38,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrain
                   title="Durdur"
                   className="flex items-center gap-2 text-sm px-3 py-2 rounded-full text-white bg-red-500 hover:bg-red-600 transition-colors"
                 >
-                  <Icon name="stop-circle" size={20} className="text-white" />
+                  <Icon icon={StopCircle} size={20} className="text-white" />
                   <span className="hidden sm:inline">Durdur</span>
                 </button>
                 <button
@@ -46,7 +47,7 @@ const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrain
                   title="Müdahale Et"
                   className="flex items-center gap-2 text-sm px-3 py-2 rounded-full text-white bg-blue-500 hover:bg-blue-600 transition-colors"
                 >
-                  <Icon name="eye" size={20} className="text-white" />
+                  <Icon icon={Eye} size={20} className="text-white" />
                   <span className="hidden sm:inline">Müdahale Et</span>
                 </button>
               </div>
@@ -56,14 +57,14 @@ const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrain
               title="Temayı Değiştir"
               className="p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
             >
-              <Icon name={theme === 'light' ? 'moon' : 'sun'} size={24} strokeWidth={2} />
+              <Icon icon={theme === 'light' ? Moon : Sun} size={24} strokeWidth={2} />
             </button>
             <button
               onClick={onCollectionClick}
               title="İnovasyon Panonuz"
               className="p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
             >
-              <Icon name="archive" size={24} strokeWidth={2} />
+              <Icon icon={Archive} size={24} strokeWidth={2} />
             </button>
           </div>
         </div>

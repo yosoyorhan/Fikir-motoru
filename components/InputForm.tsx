@@ -3,6 +3,7 @@ import LoadingSpinner from './LoadingSpinner';
 import { Persona, Dominance, PersonaFocus, AppState } from '../types';
 import { PersonaIcon } from './ChatBubble';
 import Icon from './Icon';
+import { SlidersHorizontal, Lightbulb, Send } from 'lucide-react';
 
 interface InputFormProps {
   onFindIdea: (topic: string, isDeepDive: boolean, personaFocus: PersonaFocus, isConcise: boolean, isFlash: boolean, rememberVault: boolean, isBigBossActive: boolean, bigBossInfluence: number) => void;
@@ -208,7 +209,7 @@ const InputForm: React.FC<InputFormProps> = ({ onFindIdea, onChatMessage, onUser
                             title="Strateji Ayarları"
                             className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${isSettingsOpen ? 'bg-blue-500 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]'}`}
                         >
-                            <Icon name="sliders-horizontal" size={24} strokeWidth={2} />
+                            <Icon icon={SlidersHorizontal} size={24} strokeWidth={2} />
                         </button>
                         <button
                             type="button"
@@ -216,14 +217,14 @@ const InputForm: React.FC<InputFormProps> = ({ onFindIdea, onChatMessage, onUser
                             disabled={!inputText.trim() || isLoading}
                             className="flex-shrink-0 h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-black font-semibold glass-button disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <Icon name="lightbulb" size={24} strokeWidth={2} />
+                            <Icon icon={Lightbulb} size={24} strokeWidth={2} />
                             <span>Fikir Bul</span>
                         </button>
                     </>
                   )}
                   {appState === AppState.AWAITING_USER_INPUT && (
                        <button type="submit" disabled={!inputText.trim()} className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 bg-blue-500 text-white rounded-lg flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors">
-                            <Icon name="send" size={24} strokeWidth={2} />
+                            <Icon icon={Send} size={24} strokeWidth={2} />
                        </button>
                   )}
               </div>
