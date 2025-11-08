@@ -1,0 +1,51 @@
+# .github/workflows/main.yml
+
+# İş akışının adı (GitHub Actions arayüzünde görünür)
+name: Node.js CI (Sürekli Entegrasyon)
+
+# Bu iş akışının ne zaman tetikleneceğini belirler
+on:
+  # "main" dalına (branch) kod itildiğinde (push)
+  push:
+    branches: [ "main" ]
+  # "main" dalına bir birleştirme isteği (pull request) açıldığında
+  pull_request:
+    branches: [ "main" ]
+
+# İş akışının yapacağı işleri tanımlar
+jobs:
+  # "build" adında bir iş (job) tanımlıyoruz
+  build:
+    # Bu işin çalışacağı işletim sistemini belirtir (en güncel Ubuntu)
+    runs-on: ubuntu-latest
+
+    # Strateji: Bu işi farklı Node.js sürümleri için paralel olarak çalıştır
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x] # Node.js 18 ve 20 sürümleriyle test et
+
+    # İşin adımları (steps)
+    steps:
+      # 1. Adım: Kodu (repository) sanal makineye indirir
+      - name: Kodu al (Checkout)
+        uses: actions/checkout@v4
+
+      # 2. Adım: Belirlenen Node.js sürümünü kurar
+      - name: Node.js ${{ matrix.node-version }} sürümünü kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          # 'npm' paketlerini önbelleğe al (cache) - daha hızlı kurulum için
+          cache: 'npm'
+
+      # 3. Adım: Proje bağımlılıklarını yükler (package-lock.json'a göre)
+      - name: Bağımlılıkları yükle
+        run: npm ci
+
+      # 4. Adım: Projeyi derler/inşa eder (eğer package.json'da "build" script'i varsa)
+      - name: Build (Yapılandırma)
+        run: npm run build --if-present
+
+      # 5. Adım: Testleri çalıştırır
+      - name: Testleri çalıştır
+        run: npm test
