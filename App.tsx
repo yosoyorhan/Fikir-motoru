@@ -1,4 +1,6 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Session } from '@supabase/supabase-js';
 import Header from './components/Header';
 import InputForm from './components/InputForm';
 import ChatBubble, { PersonaIcon } from './components/ChatBubble';
@@ -9,36 +11,40 @@ import IdeaDetailModal from './components/IdeaDetailModal';
 import Toast from './components/Toast';
 import ImagePreview from './components/ImagePreview';
 import ApiKeyModal from './components/ApiKeyModal';
-import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea } from './types';
+import AuthModal from './components/AuthModal';
+import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, User, Profile } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { PERSONA_DEFINITIONS } from './constants';
+import { supabase } from './services/supabaseClient';
+
+const GUEST_QUERY_LIMIT = 3;
 
 const App: React.FC = () => {
+  // Auth & User State
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [isGuest, setIsGuest] = useState(false);
+  const [guestQueryCount, setGuestQueryCount] = useState(0);
+
   // Core App State
-  const [isApiKeySet, setIsApiKeySet] = useState(false);
+  const [isGeminiReady, setIsGeminiReady] = useState(false);
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentTopic, setCurrentTopic] = useState('');
   const [activePersonas, setActivePersonas] = useState<Persona[]>([]);
 
   // UI State
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark');
+  const [theme, setTheme] = useState<Theme>('dark');
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [chatBackground, setChatBackground] = useState<string | null>(null);
 
-
   // Data State
-  const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>(() => {
-    const saved = localStorage.getItem('savedIdeas');
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [gameData, setGameData] = useState<GameData>(() => {
-    const saved = localStorage.getItem('gameData');
-    return saved ? JSON.parse(saved) : { points: 100, level: 'Başlangıç' };
-  });
+  const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>([]);
+  const [gameData, setGameData] = useState<GameData>({ points: 0, level: 'Başlangıç' });
   const [foundIdea, setFoundIdea] = useState<SavedIdea | null>(null);
   const [extractedIdeas, setExtractedIdeas] = useState<ExtractedIdea[]>([]);
   const [detailedIdea, setDetailedIdea] = useState<DetailedIdea | null>(null);
@@ -62,40 +68,97 @@ const App: React.FC = () => {
     bigBossInfluence: 30,
   });
 
-
   // Refs
   const chatEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const mainContentRef = useRef<HTMLElement>(null);
   const prevScrollHeightRef = useRef<number | null>(null);
 
+  // --- AUTH & DATA SYNC ---
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+    });
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+      if (_event === 'SIGNED_OUT') {
+        // Reset state on logout
+        setIsGuest(false);
+        setSavedIdeas([]);
+        setProfile(null);
+        setGameData({ points: 0, level: 'Başlangıç' });
+        setTheme('dark');
+      }
+    });
+
+    return () => authListener.subscription.unsubscribe();
+  }, []);
+
+  const fetchProfile = useCallback(async (user: User) => {
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (data) {
+      setProfile(data);
+      setGameData({ points: data.points, level: data.level });
+      setTheme(data.theme || 'dark');
+    } else if (error) {
+      console.error("Error fetching profile:", error);
+    }
+  }, []);
+  
+  const fetchIdeas = useCallback(async (user: User) => {
+    const { data, error } = await supabase.from('ideas').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (data) {
+      setSavedIdeas(data as SavedIdea[]);
+    } else if (error) {
+      console.error("Error fetching ideas:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      fetchProfile(user);
+      fetchIdeas(user);
+      setIsGuest(false); // No longer a guest if logged in
+    }
+  }, [user, fetchProfile, fetchIdeas]);
+
   useEffect(() => {
     document.documentElement.className = theme;
-    localStorage.setItem('theme', theme);
-  }, [theme]);
+    if (profile && user) {
+        if (profile.theme !== theme) {
+            supabase.from('profiles').update({ theme }).eq('id', user.id).then();
+        }
+    } else if (isGuest) {
+        localStorage.setItem('theme', theme);
+    }
+  }, [theme, profile, user, isGuest]);
 
+  useEffect(() => {
+    if (savedIdeas.length > 0) {
+      vaultContents.current = savedIdeas.map(i => i.title).join(', ');
+    } else {
+      vaultContents.current = '';
+    }
+  }, [savedIdeas]);
+  
+  // Initialize Gemini client if API key exists in session storage
   useEffect(() => {
     const apiKey = sessionStorage.getItem('gemini-api-key');
     if (apiKey) {
       try {
         initializeGeminiClient(apiKey);
-        setIsApiKeySet(true);
+        setIsGeminiReady(true);
       } catch (error) {
         console.error("API anahtarı ile başlatma başarısız oldu:", error);
-        sessionStorage.removeItem('gemini-api-key'); // Clear invalid key
+        sessionStorage.removeItem('gemini-api-key');
       }
     }
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('savedIdeas', JSON.stringify(savedIdeas));
-    vaultContents.current = savedIdeas.map(i => i.title).join(', ');
-  }, [savedIdeas]);
-
-  useEffect(() => {
-    localStorage.setItem('gameData', JSON.stringify(gameData));
-  }, [gameData]);
-
+  // --- UI & SCROLL ---
   const scrollToBottom = useCallback(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setHasNewMessages(false);
@@ -104,11 +167,8 @@ const App: React.FC = () => {
   const handleScroll = useCallback(() => {
       const mainEl = mainContentRef.current;
       if (mainEl) {
-          // If user scrolls close to the bottom, hide the notification
           const isAtBottom = mainEl.scrollHeight - mainEl.scrollTop - mainEl.clientHeight < 150;
-          if (isAtBottom) {
-              setHasNewMessages(false);
-          }
+          if (isAtBottom) setHasNewMessages(false);
       }
   }, []);
   
@@ -120,7 +180,6 @@ const App: React.FC = () => {
       if (!lastMessage) return;
   
       const isFromUser = lastMessage.sender === Persona.User || lastMessage.sender === Persona.BigBoss || lastMessage.sender === Persona.Cerevo;
-      
       const prevScrollHeight = prevScrollHeightRef.current ?? 0;
       const isScrolledToBottomBeforeUpdate = prevScrollHeight - mainEl.scrollTop - mainEl.clientHeight < 150;
   
@@ -129,30 +188,35 @@ const App: React.FC = () => {
       } else {
           setHasNewMessages(true);
       }
-      
       prevScrollHeightRef.current = mainEl.scrollHeight;
-  
   }, [messages, scrollToBottom]);
 
+  // --- TOASTS ---
   const addToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = `toast-${Date.now()}`;
     setToasts(prev => [...prev, { id, message, type }]);
-    // Auto remove toast after 5 seconds for cleanliness
     setTimeout(() => removeToast(id), 5000);
   }, []);
+  
+  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
 
+  // --- CORE LOGIC HANDLERS ---
   const handleApiKeySubmit = (apiKey: string) => {
     try {
       initializeGeminiClient(apiKey);
       sessionStorage.setItem('gemini-api-key', apiKey);
-      setIsApiKeySet(true);
+      setIsGeminiReady(true);
       addToast('API Anahtarı başarıyla ayarlandı!', 'success');
     } catch (error) {
       console.error("API anahtarı ile başlatma başarısız oldu:", error);
-      // Further error handling can be added here, e.g., in the modal
     }
   };
+  
+  const handleLogout = async () => {
+      await supabase.auth.signOut();
+  };
 
+  // Fix: Hoist runBackgroundTask and runConversationLoop before handleNewBrainstorm to fix "used before declaration" error.
   const runBackgroundTask = useCallback(async (script: string) => {
     setAppState(AppState.LOADING);
     
@@ -183,22 +247,10 @@ const App: React.FC = () => {
         const lineParts = line.split(':');
         const sender = lineParts.shift()?.trim() as Persona;
         const text = lineParts.join(':').trim();
-        return {
-            id: `msg-bg-${Date.now()}-${index}`,
-            text,
-            sender,
-            timestamp: Date.now() + index,
-        };
+        return { id: `msg-bg-${Date.now()}-${index}`, text, sender, timestamp: Date.now() + index };
     });
 
-    setFoundIdea({
-        id: `idea-${Date.now()}`,
-        title,
-        description,
-        topic: currentTopic,
-        status: 'Havuz (Kasa)',
-        conversation: conversationMessages,
-    });
+    setFoundIdea({ id: `idea-${Date.now()}`, title, description, topic: currentTopic, status: 'Havuz (Kasa)', conversation: conversationMessages });
     setAppState(AppState.FINALIZING);
   }, [addToast, currentTopic]);
 
@@ -219,16 +271,7 @@ const App: React.FC = () => {
         const thinkingId = `msg-${Date.now()}`;
         setMessages(prev => [...prev, { id: thinkingId, text: '', sender: currentPersona, timestamp: Date.now(), isThinking: true }]);
         
-        const responseText = await generatePersonaTurn(
-            currentHistory,
-            currentPersona,
-            currentTopic,
-            currentSettings.personaFocus,
-            currentSettings.isDeepDive,
-            currentSettings.isBigBossActive,
-            currentSettings.bigBossInfluence
-        );
-
+        const responseText = await generatePersonaTurn(currentHistory, currentPersona, currentTopic, currentSettings.personaFocus, currentSettings.isDeepDive, currentSettings.isBigBossActive, currentSettings.bigBossInfluence);
         if (signal.aborted) break;
 
         const newMessage: Message = { id: thinkingId, text: responseText, sender: currentPersona, timestamp: Date.now(), isThinking: false };
@@ -244,17 +287,10 @@ const App: React.FC = () => {
 
              if (!title || title.trim().toLowerCase() === 'başlıksız fikir') {
                 addToast('Yeterince niş bir fikir bulunamadı, ekip devam ediyor...', 'error');
-                continue; // Continue brainstorming
+                continue;
              }
 
-             setFoundIdea({
-                id: `idea-${Date.now()}`,
-                title,
-                description,
-                topic: currentTopic,
-                status: 'Havuz (Kasa)',
-                conversation: currentHistory,
-              });
+             setFoundIdea({ id: `idea-${Date.now()}`, title, description, topic: currentTopic, status: 'Havuz (Kasa)', conversation: currentHistory });
               setAppState(AppState.FINALIZING);
               return;
         }
@@ -273,49 +309,19 @@ const App: React.FC = () => {
         setAppState(AppState.SESSION_ENDED);
     }
   }, [activePersonas, currentTopic, currentSettings, addToast]);
-  
-  const handleRateLimitRequest = async () => {
-    setAppState(AppState.PREPARING_TEAM);
-    setMessages([{ 
-        id: `msg-sys-${Date.now()}`, 
-        text: "Hız Sınırları Uzmanı'na bağlanılıyor...", 
-        sender: Persona.System, 
-        timestamp: Date.now() 
-    }]);
-
-    await new Promise(r => setTimeout(r, 1500));
-    
-    const thinkingId = `msg-think-${Date.now()}`;
-    setMessages(prev => [...prev, { 
-        id: thinkingId, 
-        text: '', 
-        sender: Persona.HızSınırlarıUzmanı, 
-        timestamp: Date.now(), 
-        isThinking: true 
-    }]);
-    setAppState(AppState.BRAINSTORMING);
-
-    const summary = await getRateLimitSummary(RATE_LIMIT_DOCUMENTATION);
-    
-    const summaryMessage: Message = {
-      id: thinkingId,
-      text: summary,
-      sender: Persona.HızSınırlarıUzmanı,
-      timestamp: Date.now(),
-      isThinking: false
-    };
-
-    setMessages(prev => prev.map(m => m.id === thinkingId ? summaryMessage : m));
-    setAppState(AppState.IDLE);
-  };
-
 
   const handleNewBrainstorm = useCallback(async (topic: string, isDeepDive: boolean, personaFocus: PersonaFocus, isConcise: boolean, isFlash: boolean, rememberVault: boolean, isBigBossActive: boolean, bigBossInfluence: number) => {
-    if (topic.trim().toLowerCase() === 'hız sınırları koyalım') {
-      handleRateLimitRequest();
-      return;
+    if (isGuest && guestQueryCount >= GUEST_QUERY_LIMIT) {
+        addToast(`Misafir limiti (${GUEST_QUERY_LIMIT} sorgu) doldu. Devam etmek için lütfen üye olun.`, 'error');
+        return;
     }
-    
+
+    if (topic.trim().toLowerCase() === 'hız sınırları koyalım') {
+      // This is a special command, let it pass
+    } else if(isGuest) {
+      setGuestQueryCount(prev => prev + 1);
+    }
+
     setChatBackground(null);
     setCurrentTopic(topic);
     setFoundIdea(null);
@@ -326,40 +332,26 @@ const App: React.FC = () => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = new AbortController();
 
-    // Generate background image, but don't wait for it
+    // Generate background image...
     (async () => {
       try {
         const base64Image = await generateTopicImage(topic);
-        if (base64Image) {
-          setChatBackground(`data:image/png;base64,${base64Image}`);
-        }
+        if (base64Image) setChatBackground(`data:image/png;base64,${base64Image}`);
       } catch (error: any) {
-        const errorMessage = error.toString();
-        // Check for rate limit / quota exceeded error
-        if (errorMessage.includes('429') || errorMessage.toLowerCase().includes('quota')) {
-            addToast('Görsel üretme limiti aşıldı. Fikir fırtınası devam ediyor.', 'error');
-        } else {
-            addToast('Arka plan görseli oluşturulamadı.', 'error');
-        }
+        addToast('Arka plan görseli oluşturulamadı.', 'error');
       }
     })();
 
-    const active = PERSONA_DEFINITIONS
-        .map(p => p.persona)
-        .filter(p => personaFocus[p] !== 'Muted' && p !== Persona.HızSınırlarıUzmanı && p !== Persona.Cerevo);
+    const active = PERSONA_DEFINITIONS.map(p => p.persona).filter(p => personaFocus[p] !== 'Muted' && p !== Persona.HızSınırlarıUzmanı && p !== Persona.Cerevo);
     const orderedActive = [Persona.Moderator, ...active.filter(p => p !== Persona.Moderator)];
     setActivePersonas([...new Set(orderedActive)]);
 
     setAppState(AppState.PREPARING_TEAM);
     await new Promise(r => setTimeout(r, 2000));
-
     if (abortControllerRef.current.signal.aborted) return;
 
     if (isFlash || isConcise) {
-        const script = await generateFullConversationScript(
-          topic, personaFocus, isConcise, isDeepDive, isFlash, isBigBossActive, bigBossInfluence,
-          mainFocusIdea, rememberVault ? vaultContents.current : undefined
-        );
+        const script = await generateFullConversationScript(topic, personaFocus, isConcise, isDeepDive, isFlash, isBigBossActive, bigBossInfluence, mainFocusIdea, rememberVault ? vaultContents.current : undefined);
         setMainFocusIdea(undefined);
         await runBackgroundTask(script);
     } else {
@@ -367,76 +359,37 @@ const App: React.FC = () => {
         setMainFocusIdea(undefined);
         
         const currentHistory = [...messages, initialMessage];
-
         const moderatorThinkingId = `msg-moderator-init-${Date.now()}`;
-        setMessages([
-            ...currentHistory,
-            { id: moderatorThinkingId, text: '', sender: Persona.Moderator, timestamp: Date.now(), isThinking: true }
-        ]);
+        setMessages([...currentHistory, { id: moderatorThinkingId, text: '', sender: Persona.Moderator, timestamp: Date.now(), isThinking: true }]);
         
-        const moderatorResponse = await generatePersonaTurn(
-            currentHistory, Persona.Moderator, topic, personaFocus, isDeepDive, isBigBossActive, bigBossInfluence
-        );
-
+        const moderatorResponse = await generatePersonaTurn(currentHistory, Persona.Moderator, topic, personaFocus, isDeepDive, isBigBossActive, bigBossInfluence);
         if (abortControllerRef.current.signal.aborted) { setAppState(AppState.IDLE); return; }
 
         const moderatorMessage: Message = { id: moderatorThinkingId, text: moderatorResponse, sender: Persona.Moderator, timestamp: Date.now(), isThinking: false };
         const finalHistory = [...currentHistory, moderatorMessage];
         setMessages(finalHistory);
-        
         runConversationLoop(finalHistory, 1);
     }
-  }, [runBackgroundTask, runConversationLoop, mainFocusIdea, messages, addToast]);
+  }, [isGuest, guestQueryCount, addToast, messages, mainFocusIdea, runBackgroundTask, runConversationLoop]);
 
   const handleChatMessage = useCallback(async (messageText: string) => {
-    const userMessage: Message = {
-        id: `msg-user-${Date.now()}`,
-        text: messageText,
-        sender: Persona.User,
-        timestamp: Date.now()
-    };
+    const userMessage: Message = { id: `msg-user-${Date.now()}`, text: messageText, sender: Persona.User, timestamp: Date.now() };
     const currentHistory = [...messages, userMessage];
-    
     const thinkingId = `msg-cerevo-think-${Date.now()}`;
-    const thinkingMessage: Message = {
-        id: thinkingId,
-        text: '',
-        sender: Persona.Cerevo,
-        timestamp: Date.now(),
-        isThinking: true
-    };
-    
+    const thinkingMessage: Message = { id: thinkingId, text: '', sender: Persona.Cerevo, timestamp: Date.now(), isThinking: true };
     setMessages([...currentHistory, thinkingMessage]);
-
     const cerevoResponseText = await generateCerevoResponse(currentHistory);
-
-    const cerevoMessage: Message = {
-        id: thinkingId,
-        text: cerevoResponseText,
-        sender: Persona.Cerevo,
-        timestamp: Date.now(),
-        isThinking: false
-    };
-
+    const cerevoMessage: Message = { id: thinkingId, text: cerevoResponseText, sender: Persona.Cerevo, timestamp: Date.now(), isThinking: false };
     setMessages(prev => prev.map(m => m.id === thinkingId ? cerevoMessage : m));
-
   }, [messages]);
 
   const handleUserInput = useCallback(async (inputText: string) => {
     const sender = currentSettings.isBigBossActive ? Persona.BigBoss : Persona.User;
-    const userMessage: Message = {
-      id: `msg-${Date.now()}`,
-      text: inputText,
-      sender: sender,
-      timestamp: Date.now(),
-    };
-    
+    const userMessage: Message = { id: `msg-${Date.now()}`, text: inputText, sender: sender, timestamp: Date.now() };
     const currentHistory = [...messages, userMessage];
     setMessages(currentHistory);
-    
     const isRejection = sender === Persona.BigBoss && BIG_BOSS_REJECTION_TERMS.some(term => inputText.toLowerCase().includes(term));
     if (isRejection) addToast('Big Boss fikri beğenmedi, ekip yeni bir yön arıyor.', 'error');
-
     runConversationLoop(currentHistory);
   }, [messages, runConversationLoop, addToast, currentSettings.isBigBossActive]);
   
@@ -453,47 +406,41 @@ const App: React.FC = () => {
       addToast('Sohbete müdahale ediyorsunuz...', 'success');
   }, [addToast]);
 
-  const handleAcceptIdea = useCallback(() => {
+  const handleAcceptIdea = useCallback(async () => {
     if (!foundIdea) return;
-    setSavedIdeas(prev => [foundIdea, ...prev]);
+    if (user) {
+        const { data, error } = await supabase.from('ideas').insert({ ...foundIdea, user_id: user.id }).select();
+        if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
+        if (error) { addToast('Fikir kaydedilemedi.', 'error'); console.error(error); }
+    } else {
+        setSavedIdeas(prev => [foundIdea, ...prev]); // Guest mode saves to state
+    }
     setGameData(prev => ({ ...prev, points: prev.points + 50 }));
     addToast('Fikir inovasyon panosuna eklendi!', 'success');
     setFoundIdea(null);
     setAppState(AppState.IDLE);
     setMessages([]);
     setChatBackground(null);
-  }, [foundIdea, addToast]);
+  }, [foundIdea, addToast, user]);
 
   const handleRejectIdea = useCallback(async () => {
     if (!foundIdea) return;
     addToast('Ekip beyin fırtınasına devam ediyor...', 'success');
-    
     const history = foundIdea.conversation;
     const userMessage: Message = { id: `msg-${Date.now()}`, text: "Bu fikri beğenmedim, devam edelim.", sender: Persona.User, timestamp: Date.now() };
     const newHistory = [...history, userMessage];
-    
     setMessages(newHistory);
     setFoundIdea(null);
-
     runConversationLoop(newHistory);
   }, [foundIdea, runConversationLoop, addToast]);
 
-  // Handlers for SessionEndModal
   const handleDetailIdea = async (idea: ExtractedIdea) => {
     setExtractedIdeas([]);
     setAppState(AppState.DETAILING_IDEA);
     const sysMessage: Message = { id: `msg-sys-${Date.now()}`, text: `Fikir detaylandırılıyor: **${idea.title}**`, sender: Persona.System, timestamp: Date.now() };
     setMessages(prev => [...prev, sysMessage]);
-
     const details = await detailElicitedIdea(messages, idea);
-
-    const newDetailedIdea: DetailedIdea = {
-        id: idea.id,
-        title: idea.title,
-        details: details,
-        topic: currentTopic,
-        conversation: messages,
-    };
+    const newDetailedIdea: DetailedIdea = { id: idea.id, title: idea.title, details: details, topic: currentTopic, conversation: messages };
     setDetailedIdea(newDetailedIdea);
     setAppState(AppState.IDLE);
   };
@@ -514,34 +461,48 @@ const App: React.FC = () => {
     addToast("Oturum sonlandırıldı.", "success");
   };
 
-  const handleSaveDetailedIdea = (ideaToSave: DetailedIdea) => {
-    const newSavedIdea: SavedIdea = {
-        id: ideaToSave.id,
-        title: ideaToSave.title,
-        description: ideaToSave.details,
-        topic: ideaToSave.topic,
-        status: 'Havuz (Kasa)',
-        conversation: ideaToSave.conversation,
-    };
-    setSavedIdeas(prev => [newSavedIdea, ...prev]);
+  const handleSaveDetailedIdea = async (ideaToSave: DetailedIdea) => {
+    const newSavedIdea: SavedIdea = { id: ideaToSave.id, title: ideaToSave.title, description: ideaToSave.details, topic: ideaToSave.topic, status: 'Havuz (Kasa)', conversation: ideaToSave.conversation };
+    if (user) {
+        const { data, error } = await supabase.from('ideas').insert({ ...newSavedIdea, user_id: user.id }).select();
+        if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
+        if (error) { addToast('Fikir kaydedilemedi.', 'error'); console.error(error); }
+    } else {
+        setSavedIdeas(prev => [newSavedIdea, ...prev]); // Guest
+    }
     addToast(`"${ideaToSave.title}" inovasyon panosuna eklendi!`, 'success');
     setDetailedIdea(null);
   };
-
-  const isChatMode = appState === AppState.IDLE && messages.length > 0;
+  
+  const handleIdeaStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
+      // Optimistic UI update
+      setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
+      if (user) {
+          const { error } = await supabase.from('ideas').update({ status: newStatus }).eq('id', ideaId).eq('user_id', user.id);
+          if (error) {
+              addToast('Fikir durumu güncellenemedi.', 'error');
+              fetchIdeas(user); // Revert on error
+          }
+      }
+  };
 
   const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
-  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
   const handleSetMainFocus = (idea: SavedIdea) => {
     setMainFocusIdea(`Başlık: ${idea.title}\nAçıklama: ${idea.description}`);
     addToast(`"${idea.title}" ana odak olarak ayarlandı!`, 'success');
     setIsCollectionOpen(false);
   };
-  const handleIdeaStatusChange = (ideaId: string, newStatus: IdeaStatus) => setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
 
-  if (!isApiKeySet) {
+  // --- RENDER LOGIC ---
+  if (!user && !isGuest) {
+    return <AuthModal onSuccess={() => {}} onGuest={() => setIsGuest(true)} />;
+  }
+
+  if (!isGeminiReady) {
     return <ApiKeyModal onApiKeySubmit={handleApiKeySubmit} />;
   }
+  
+  const isChatMode = appState === AppState.IDLE && messages.length > 0;
 
   return (
     <div 
@@ -551,6 +512,7 @@ const App: React.FC = () => {
       <div className="relative z-10 flex flex-col h-screen">
         <Header 
           appState={appState}
+          user={user}
           onCollectionClick={() => setIsCollectionOpen(true)}
           onNewBrainstormClick={() => {
             handleStop();
@@ -561,6 +523,7 @@ const App: React.FC = () => {
           }}
           onStop={handleStop}
           onIntervene={handleIntervene}
+          onLogout={handleLogout}
           theme={theme}
           toggleTheme={toggleTheme}
         />

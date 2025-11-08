@@ -1,4 +1,7 @@
 // This file defines the core types and interfaces used throughout the application.
+import { User } from '@supabase/supabase-js';
+
+export { User };
 
 export enum Persona {
   Moderator = 'Moderatör',
@@ -61,6 +64,7 @@ export interface SavedIdea {
   topic: string;
   status: IdeaStatus;
   conversation: Message[];
+  user_id?: string;
 }
 
 export interface ExtractedIdea {
@@ -81,4 +85,11 @@ export interface ToastState {
   id: string;
   message: string;
   type: 'success' | 'error';
+}
+
+export interface Profile {
+  id: string;
+  points: number;
+  level: string;
+  theme: Theme;
 }
