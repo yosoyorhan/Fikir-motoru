@@ -1,0 +1,8 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Project global overrides (keeps existing inline styles in index.html as fallback) */
+html, body, #root {
+  height: 100%;
+}

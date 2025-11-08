@@ -2,6 +2,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+// Global styles (Tailwind). Install Tailwind and build CSS then import here.
+import './styles/index.css';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
