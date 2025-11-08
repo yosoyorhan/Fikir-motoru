@@ -577,7 +577,7 @@ const App: React.FC = () => {
               <div className="text-center py-20 animate-fade-in flex flex-col items-center justify-center flex-1">
                 <div className="animate-pulse-icon mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-500/20">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                 </div>
                 <p className="mt-4 text-[var(--text-primary)] text-lg font-semibold">Fikir Detaylandırılıyor</p>
@@ -616,7 +616,7 @@ const App: React.FC = () => {
                 >
                     Yeni Mesajlar
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                     </svg>
                 </button>
             </div>
