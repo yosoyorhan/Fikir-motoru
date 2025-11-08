@@ -1,12 +1,10 @@
 import React, { useState } from 'react';
 import { SavedIdea, IdeaStatus } from '../types';
-import { Session } from '@supabase/supabase-js';
 
 interface CollectionModalProps {
   isOpen: boolean;
   onClose: () => void;
   savedIdeas: SavedIdea[];
-  session: Session | null;
   onLoadIdea: (idea: SavedIdea) => void;
   onSetMainFocus: (idea: SavedIdea) => void;
   onIdeaStatusChange: (ideaId: string, newStatus: IdeaStatus) => void;
@@ -77,42 +75,9 @@ const CollectionModal: React.FC<CollectionModalProps> = ({
     savedIdeas, 
     onLoadIdea,
     onSetMainFocus,
-    onIdeaStatusChange,
-    session
+    onIdeaStatusChange
 }) => {
   if (!isOpen) return null;
-
-  const content = session ? (
-    savedIdeas.length === 0 ? (
-      <div className="text-center text-[var(--text-secondary)] py-10 flex flex-col items-center justify-center h-full">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 opacity-30 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M6.343 16l-.707.707m12.728 0l-.707-.707M6.343 8l-.707-.707m12.728 0l.707.707M12 21a9 9 0 110-18 9 9 0 010 18z" />
-        </svg>
-        <p className="text-lg font-semibold">İnovasyon Kasası boş.</p>
-        <p className="text-sm mt-1">İlk parlak fikrinizi bulmak için motoru çalıştırın!</p>
-      </div>
-    ) : (
-      <div className="flex flex-col lg:flex-row gap-6 lg:h-full">
-        {columns.map(status => (
-          <KanbanColumn
-            key={status}
-            status={status}
-            ideas={savedIdeas.filter(idea => idea.status === status)}
-            onSetMainFocus={onSetMainFocus}
-            onIdeaStatusChange={onIdeaStatusChange}
-          />
-        ))}
-      </div>
-    )
-  ) : (
-    <div className="text-center text-[var(--text-secondary)] py-10 flex flex-col items-center justify-center h-full">
-      <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 opacity-30 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-      </svg>
-      <p className="text-lg font-semibold">Giriş Yapmalısınız</p>
-      <p className="text-sm mt-1">Kaydedilen fikirlere erişmek için lütfen giriş yapın.</p>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 z-40 flex justify-center items-center animate-fade-in" onClick={onClose}>
@@ -123,7 +88,27 @@ const CollectionModal: React.FC<CollectionModalProps> = ({
         </div>
         
         <div className="p-6 flex-1 overflow-y-auto">
-          {content}
+          {savedIdeas.length === 0 ? (
+            <div className="text-center text-[var(--text-secondary)] py-10 flex flex-col items-center justify-center h-full">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 opacity-30 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M6.343 16l-.707.707m12.728 0l-.707-.707M6.343 8l-.707-.707m12.728 0l.707.707M12 21a9 9 0 110-18 9 9 0 010 18z" />
+              </svg>
+              <p className="text-lg font-semibold">İnovasyon Kasası boş.</p>
+              <p className="text-sm mt-1">İlk parlak fikrinizi bulmak için motoru çalıştırın!</p>
+            </div>
+          ) : (
+            <div className="flex flex-col lg:flex-row gap-6 lg:h-full">
+              {columns.map(status => (
+                <KanbanColumn
+                  key={status}
+                  status={status}
+                  ideas={savedIdeas.filter(idea => idea.status === status)}
+                  onSetMainFocus={onSetMainFocus}
+                  onIdeaStatusChange={onIdeaStatusChange}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

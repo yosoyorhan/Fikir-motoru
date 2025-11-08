@@ -2,8 +2,6 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import LoadingSpinner from './LoadingSpinner';
 import { Persona, Dominance, PersonaFocus, AppState } from '../types';
 import { PersonaIcon } from './ChatBubble';
-import Icon from './Icon';
-import { SlidersHorizontal, Lightbulb, Send } from 'lucide-react';
 
 interface InputFormProps {
   onFindIdea: (topic: string, isDeepDive: boolean, personaFocus: PersonaFocus, isConcise: boolean, isFlash: boolean, rememberVault: boolean, isBigBossActive: boolean, bigBossInfluence: number) => void;
@@ -209,22 +207,26 @@ const InputForm: React.FC<InputFormProps> = ({ onFindIdea, onChatMessage, onUser
                             title="Strateji Ayarları"
                             className={`flex-shrink-0 h-10 w-10 flex items-center justify-center rounded-xl transition-colors ${isSettingsOpen ? 'bg-blue-500 text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--border-color)]'}`}
                         >
-                            <Icon icon={SlidersHorizontal} size={24} strokeWidth={2} />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
                         </button>
                         <button
                             type="button"
                             onClick={handleFindIdea}
                             disabled={!inputText.trim() || isLoading}
-                            className="flex-shrink-0 h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-black font-semibold glass-button disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-shrink-0 h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-white font-semibold gradient-button disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <Icon icon={Lightbulb} size={24} strokeWidth={2} />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M6.343 16l-.707.707m12.728 0l-.707-.707M6.343 8l-.707-.707m12.728 0l.707.707M12 21a9 9 0 110-18 9 9 0 010 18z" />
+                            </svg>
                             <span>Fikir Bul</span>
                         </button>
                     </>
                   )}
                   {appState === AppState.AWAITING_USER_INPUT && (
                        <button type="submit" disabled={!inputText.trim()} className="absolute right-2 top-1/2 -translate-y-1/2 h-10 w-10 bg-blue-500 text-white rounded-lg flex items-center justify-center disabled:bg-gray-500 disabled:cursor-not-allowed hover:bg-blue-600 transition-colors">
-                            <Icon icon={Send} size={24} strokeWidth={2} />
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
                        </button>
                   )}
               </div>

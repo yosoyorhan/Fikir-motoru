@@ -8,36 +8,26 @@ import SessionEndModal from './components/SessionEndModal';
 import IdeaDetailModal from './components/IdeaDetailModal';
 import Toast from './components/Toast';
 import ImagePreview from './components/ImagePreview';
-import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, Profile } from './types';
+import ApiKeyModal from './components/ApiKeyModal';
+import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
-import { API_KEY } from './config';
 import { PERSONA_DEFINITIONS } from './constants';
-import { auth, db } from './services/supabaseService';
-import AuthModal from './components/AuthModal';
-import ProfileModal from './components/ProfileModal';
-import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
   // Core App State
+  const [isApiKeySet, setIsApiKeySet] = useState(false);
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentTopic, setCurrentTopic] = useState('');
   const [activePersonas, setActivePersonas] = useState<Persona[]>([]);
 
   // UI State
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark');
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [chatBackground, setChatBackground] = useState<string | null>(null);
-
-  // Auth State
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
 
 
   // Data State
@@ -85,68 +75,26 @@ const App: React.FC = () => {
   }, [theme]);
 
   useEffect(() => {
-    // Supabase'den gelen yanıtı önce 'authListener' gibi bir değişkene atıyoruz.
-    // Bu, TypeScript'in 'data' özelliğini daha doğru tanımasına yardımcı olur.
-    const authListener = auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-
-      if (session) {
-        // Kullanıcı varsa verilerini çek
-        fetchUserData(session.user.id);
-      } else {
-        // Kullanıcı yoksa (çıkış yapmışsa), misafir verilerini localStorage'dan yükle
-        const localIdeas = localStorage.getItem('savedIdeas');
-        setSavedIdeas(localIdeas ? JSON.parse(localIdeas) : []);
-
-        const localGameData = localStorage.getItem('gameData');
-        setGameData(localGameData ? JSON.parse(localGameData) : { points: 100, level: 'Başlangıç' });
-
-        setProfile(null);
+    const apiKey = sessionStorage.getItem('gemini-api-key');
+    if (apiKey) {
+      try {
+        initializeGeminiClient(apiKey);
+        setIsApiKeySet(true);
+      } catch (error) {
+        console.error("API anahtarı ile başlatma başarısız oldu:", error);
+        sessionStorage.removeItem('gemini-api-key'); // Clear invalid key
       }
-
-      setIsAuthModalOpen(false); // Başarılı işlemden sonra modalı kapat
-      setLoading(false);
-    });
-
-    // Cleanup fonksiyonu
-    return () => {
-      // ?. operatörü ile güvenli bir şekilde unsubscribe oluyoruz
-      authListener.data.subscription.unsubscribe();
-    };
-  // Bağımlılık dizisi boş, sadece mount/unmount anında çalışacak
+    }
   }, []);
 
-  const fetchUserData = async (userId: string) => {
-    try {
-      const [profileData, ideas, gameData] = await Promise.all([
-        db.getProfile(userId),
-        db.getSavedIdeas(userId),
-        db.getGameData(userId)
-      ]);
-      setProfile(profileData);
-      setSavedIdeas(ideas);
-      if (gameData) setGameData(gameData);
-    } catch (error) {
-      console.error("Error fetching user data:", error);
-      addToast('Kullanıcı verileri alınırken bir hata oluştu.', 'error');
-    }
-  };
-
   useEffect(() => {
-    if (!session) {
-        localStorage.setItem('savedIdeas', JSON.stringify(savedIdeas));
-    }
+    localStorage.setItem('savedIdeas', JSON.stringify(savedIdeas));
     vaultContents.current = savedIdeas.map(i => i.title).join(', ');
-  }, [savedIdeas, session]);
+  }, [savedIdeas]);
 
-  const { points, level } = gameData;
   useEffect(() => {
-    if (session) {
-      db.updateGameData({ points, level }, session.user.id);
-    } else {
-      localStorage.setItem('gameData', JSON.stringify({ points, level }));
-    }
-  }, [points, level, session]);
+    localStorage.setItem('gameData', JSON.stringify(gameData));
+  }, [gameData]);
 
   const scrollToBottom = useCallback(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -192,6 +140,18 @@ const App: React.FC = () => {
     // Auto remove toast after 5 seconds for cleanliness
     setTimeout(() => removeToast(id), 5000);
   }, []);
+
+  const handleApiKeySubmit = (apiKey: string) => {
+    try {
+      initializeGeminiClient(apiKey);
+      sessionStorage.setItem('gemini-api-key', apiKey);
+      setIsApiKeySet(true);
+      addToast('API Anahtarı başarıyla ayarlandı!', 'success');
+    } catch (error) {
+      console.error("API anahtarı ile başlatma başarısız oldu:", error);
+      // Further error handling can be added here, e.g., in the modal
+    }
+  };
 
   const runBackgroundTask = useCallback(async (script: string) => {
     setAppState(AppState.LOADING);
@@ -493,30 +453,16 @@ const App: React.FC = () => {
       addToast('Sohbete müdahale ediyorsunuz...', 'success');
   }, [addToast]);
 
-  const handleAcceptIdea = useCallback(async () => {
+  const handleAcceptIdea = useCallback(() => {
     if (!foundIdea) return;
-    if (!session) {
-        setIsAuthModalOpen(true);
-        addToast('Fikirleri kaydetmek için giriş yapmalısınız.', 'error');
-        return;
-    }
-
-    try {
-        const newIdea = await db.addSavedIdea(foundIdea, session.user.id);
-        setSavedIdeas(prev => [newIdea, ...prev]);
-    } catch (error) {
-        console.error("Error saving idea:", error);
-        addToast('Fikir kaydedilirken bir hata oluştu.', 'error');
-        return;
-    }
-
+    setSavedIdeas(prev => [foundIdea, ...prev]);
     setGameData(prev => ({ ...prev, points: prev.points + 50 }));
     addToast('Fikir inovasyon panosuna eklendi!', 'success');
     setFoundIdea(null);
     setAppState(AppState.IDLE);
     setMessages([]);
     setChatBackground(null);
-  }, [foundIdea, addToast, session]);
+  }, [foundIdea, addToast]);
 
   const handleRejectIdea = useCallback(async () => {
     if (!foundIdea) return;
@@ -568,13 +514,7 @@ const App: React.FC = () => {
     addToast("Oturum sonlandırıldı.", "success");
   };
 
-  const handleSaveDetailedIdea = async (ideaToSave: DetailedIdea) => {
-    if (!session) {
-        setIsAuthModalOpen(true);
-        addToast('Fikirleri kaydetmek için giriş yapmalısınız.', 'error');
-        return;
-    }
-
+  const handleSaveDetailedIdea = (ideaToSave: DetailedIdea) => {
     const newSavedIdea: SavedIdea = {
         id: ideaToSave.id,
         title: ideaToSave.title,
@@ -583,16 +523,7 @@ const App: React.FC = () => {
         status: 'Havuz (Kasa)',
         conversation: ideaToSave.conversation,
     };
-
-    try {
-        const savedIdea = await db.addSavedIdea(newSavedIdea, session.user.id);
-        setSavedIdeas(prev => [savedIdea, ...prev.filter(i => i.id !== savedIdea.id)]);
-    } catch (error) {
-        console.error("Error saving detailed idea:", error);
-        addToast('Detaylı fikir kaydedilirken bir hata oluştu.', 'error');
-        return;
-    }
-
+    setSavedIdeas(prev => [newSavedIdea, ...prev]);
     addToast(`"${ideaToSave.title}" inovasyon panosuna eklendi!`, 'success');
     setDetailedIdea(null);
   };
@@ -606,26 +537,17 @@ const App: React.FC = () => {
     addToast(`"${idea.title}" ana odak olarak ayarlandı!`, 'success');
     setIsCollectionOpen(false);
   };
-  const handleIdeaStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
-      if (session) {
-          try {
-              const updatedIdea = await db.updateIdeaStatus(ideaId, newStatus, session.user.id);
-              setSavedIdeas(prev => prev.map(idea => idea.id === updatedIdea.id ? updatedIdea : idea));
-          } catch (error) {
-              console.error("Error updating idea status:", error);
-              addToast('Fikir durumu güncellenirken bir hata oluştu.', 'error');
-          }
-      } else {
-        setSavedIdeas(prev => prev.map(idea => idea.id === ideaId.toString() ? { ...idea, status: newStatus } : idea));
-      }
-  };
+  const handleIdeaStatusChange = (ideaId: string, newStatus: IdeaStatus) => setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
+
+  if (!isApiKeySet) {
+    return <ApiKeyModal onApiKeySubmit={handleApiKeySubmit} />;
+  }
 
   return (
     <div 
       className={`app-container bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans transition-all duration-500 ${chatBackground ? 'chat-with-bg' : ''}`}
       style={{ backgroundImage: chatBackground ? `url(${chatBackground})` : 'none' }}
     >
-      <div className="background-animation"></div>
       <div className="relative z-10 flex flex-col h-screen">
         <Header 
           appState={appState}
@@ -641,9 +563,6 @@ const App: React.FC = () => {
           onIntervene={handleIntervene}
           theme={theme}
           toggleTheme={toggleTheme}
-          session={session}
-          onLoginClick={() => setIsAuthModalOpen(true)}
-          onProfileClick={() => setIsProfileModalOpen(true)}
         />
         <main ref={mainContentRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="container mx-auto max-w-3xl flex-1">
@@ -657,7 +576,7 @@ const App: React.FC = () => {
                         className="w-24 h-24 animate-pulse-icon"
                       />
                     </div>
-                    <h1 className="text-3xl font-bold font-light-heading gradient-title">Merhaba, ben Cerevo!</h1>
+                    <h1 className="text-3xl font-bold font-light-heading">Merhaba, ben Cerevo!</h1>
                     <p className="text-[var(--text-secondary)] mt-2">
                         Sohbet edebilir veya bir konu girip "Fikir Bul" butonuna basarak<br/>beyin fırtınası başlatabilirsin.
                     </p>
@@ -679,7 +598,7 @@ const App: React.FC = () => {
               <div className="text-center py-20 animate-fade-in flex flex-col items-center justify-center flex-1">
                 <div className="animate-pulse-icon mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-500/20">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                 </div>
                 <p className="mt-4 text-[var(--text-primary)] text-lg font-semibold">Fikir Detaylandırılıyor</p>
@@ -718,7 +637,7 @@ const App: React.FC = () => {
                 >
                     Yeni Mesajlar
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 13l-7 7-7-7m14-8l-7 7-7-7" />
                     </svg>
                 </button>
             </div>
@@ -749,27 +668,7 @@ const App: React.FC = () => {
         onSave={handleSaveDetailedIdea}
         onClose={() => setDetailedIdea(null)}
       />
-      <CollectionModal
-        isOpen={isCollectionOpen}
-        onClose={() => setIsCollectionOpen(false)}
-        savedIdeas={savedIdeas}
-        onLoadIdea={() => {}}
-        onSetMainFocus={handleSetMainFocus}
-        onIdeaStatusChange={handleIdeaStatusChange}
-        session={session}
-      />
-
-      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
-
-      {session && (
-        <ProfileModal
-          isOpen={isProfileModalOpen}
-          onClose={() => setIsProfileModalOpen(false)}
-          session={session}
-          profile={profile}
-          onProfileUpdate={setProfile}
-        />
-      )}
+      <CollectionModal isOpen={isCollectionOpen} onClose={() => setIsCollectionOpen(false)} savedIdeas={savedIdeas} onLoadIdea={() => {}} onSetMainFocus={handleSetMainFocus} onIdeaStatusChange={handleIdeaStatusChange} />
 
       <div className="fixed top-5 right-5 z-[100] space-y-2">
         {toasts.map(toast => <Toast key={toast.id} {...toast} onClose={() => removeToast(toast.id)} />)}
