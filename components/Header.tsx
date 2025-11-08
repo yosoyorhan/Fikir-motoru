@@ -10,11 +10,12 @@ interface HeaderProps {
   onStop: () => void;
   onIntervene: () => void;
   onLogout: () => void;
+  onProfileClick: () => void;
   theme: Theme;
   toggleTheme: () => void;
 }
 
-const UserMenu: React.FC<{ user: User; onLogout: () => void; }> = ({ user, onLogout }) => {
+const UserMenu: React.FC<{ user: User; onLogout: () => void; onProfileClick: () => void; }> = ({ user, onLogout, onProfileClick }) => {
     const [isOpen, setIsOpen] = useState(false);
     const userInitial = user.email ? user.email.charAt(0).toUpperCase() : '?';
 
@@ -33,6 +34,12 @@ const UserMenu: React.FC<{ user: User; onLogout: () => void; }> = ({ user, onLog
                 >
                     <div className="px-4 py-2 text-xs text-[var(--text-secondary)] border-b border-[var(--border-color)] truncate">{user.email}</div>
                     <button
+                        onClick={() => { onProfileClick(); setIsOpen(false); }}
+                        className="block w-full text-left px-4 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--border-color)]"
+                    >
+                        Profilim
+                    </button>
+                    <button
                         onClick={onLogout}
                         className="block w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-[var(--border-color)]"
                     >
@@ -44,7 +51,7 @@ const UserMenu: React.FC<{ user: User; onLogout: () => void; }> = ({ user, onLog
     );
 }
 
-const Header: React.FC<HeaderProps> = ({ appState, user, onCollectionClick, onNewBrainstormClick, onStop, onIntervene, onLogout, theme, toggleTheme }) => {
+const Header: React.FC<HeaderProps> = ({ appState, user, onCollectionClick, onNewBrainstormClick, onStop, onIntervene, onLogout, onProfileClick, theme, toggleTheme }) => {
   const isBrainstorming = appState === AppState.BRAINSTORMING;
   
   return (
@@ -104,7 +111,7 @@ const Header: React.FC<HeaderProps> = ({ appState, user, onCollectionClick, onNe
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
             </button>
-            {user && <UserMenu user={user} onLogout={onLogout} />}
+            {user && <UserMenu user={user} onLogout={onLogout} onProfileClick={onProfileClick} />}
           </div>
         </div>
       </div>

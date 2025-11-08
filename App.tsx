@@ -12,6 +12,7 @@ import Toast from './components/Toast';
 import ImagePreview from './components/ImagePreview';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
 import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, User, Profile } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
@@ -38,6 +39,7 @@ const App: React.FC = () => {
   // UI State
   const [theme, setTheme] = useState<Theme>('dark');
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [chatBackground, setChatBackground] = useState<string | null>(null);
@@ -74,6 +76,16 @@ const App: React.FC = () => {
   const mainContentRef = useRef<HTMLElement>(null);
   const prevScrollHeightRef = useRef<number | null>(null);
 
+  // --- TOASTS ---
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const addToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
+    const id = `toast-${Date.now()}`;
+    setToasts(prev => [...prev, { id, message, type }]);
+  }, []);
+
   // --- AUTH & DATA SYNC ---
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -99,14 +111,16 @@ const App: React.FC = () => {
 
   const fetchProfile = useCallback(async (user: User) => {
     const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    
     if (data) {
       setProfile(data);
       setGameData({ points: data.points, level: data.level });
       setTheme(data.theme || 'dark');
     } else if (error) {
       console.error("Error fetching profile:", error);
+      addToast(`Profil yüklenemedi: ${error.message}`, 'error');
     }
-  }, []);
+  }, [addToast]);
   
   const fetchIdeas = useCallback(async (user: User) => {
     const { data, error } = await supabase.from('ideas').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
@@ -114,14 +128,18 @@ const App: React.FC = () => {
       setSavedIdeas(data as SavedIdea[]);
     } else if (error) {
       console.error("Error fetching ideas:", error);
+      addToast(`Fikirler yüklenemedi: ${error.message}`, 'error');
     }
-  }, []);
+  }, [addToast]);
 
   useEffect(() => {
     if (user) {
-      fetchProfile(user);
-      fetchIdeas(user);
-      setIsGuest(false); // No longer a guest if logged in
+      const syncUserData = async () => {
+        await fetchProfile(user);
+        await fetchIdeas(user);
+      };
+      syncUserData();
+      setIsGuest(false);
     }
   }, [user, fetchProfile, fetchIdeas]);
 
@@ -191,15 +209,6 @@ const App: React.FC = () => {
       prevScrollHeightRef.current = mainEl.scrollHeight;
   }, [messages, scrollToBottom]);
 
-  // --- TOASTS ---
-  const addToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
-    const id = `toast-${Date.now()}`;
-    setToasts(prev => [...prev, { id, message, type }]);
-    setTimeout(() => removeToast(id), 5000);
-  }, []);
-  
-  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
-
   // --- CORE LOGIC HANDLERS ---
   const handleApiKeySubmit = (apiKey: string) => {
     try {
@@ -216,7 +225,6 @@ const App: React.FC = () => {
       await supabase.auth.signOut();
   };
 
-  // Fix: Hoist runBackgroundTask and runConversationLoop before handleNewBrainstorm to fix "used before declaration" error.
   const runBackgroundTask = useCallback(async (script: string) => {
     setAppState(AppState.LOADING);
     
@@ -485,6 +493,10 @@ const App: React.FC = () => {
           }
       }
   };
+  
+  const handleProfileUpdate = (updatedProfile: Partial<Profile>) => {
+      setProfile(prev => prev ? { ...prev, ...updatedProfile } : null);
+  }
 
   const toggleTheme = () => setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   const handleSetMainFocus = (idea: SavedIdea) => {
@@ -524,6 +536,7 @@ const App: React.FC = () => {
           onStop={handleStop}
           onIntervene={handleIntervene}
           onLogout={handleLogout}
+          onProfileClick={() => setIsProfileModalOpen(true)}
           theme={theme}
           toggleTheme={toggleTheme}
         />
@@ -632,6 +645,13 @@ const App: React.FC = () => {
         onClose={() => setDetailedIdea(null)}
       />
       <CollectionModal isOpen={isCollectionOpen} onClose={() => setIsCollectionOpen(false)} savedIdeas={savedIdeas} onLoadIdea={() => {}} onSetMainFocus={handleSetMainFocus} onIdeaStatusChange={handleIdeaStatusChange} />
+      <ProfileModal 
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={user}
+        profile={profile}
+        onProfileUpdate={handleProfileUpdate}
+      />
 
       <div className="fixed top-5 right-5 z-[100] space-y-2">
         {toasts.map(toast => <Toast key={toast.id} {...toast} onClose={() => removeToast(toast.id)} />)}

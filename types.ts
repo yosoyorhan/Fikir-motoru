@@ -89,6 +89,7 @@ export interface ToastState {
 
 export interface Profile {
   id: string;
+  username: string | null;
   points: number;
   level: string;
   theme: Theme;
