@@ -1,7 +1,9 @@
 // This file defines the core types and interfaces used throughout the application.
-import { User } from '@supabase/supabase-js';
+import { Session } from '@supabase/supabase-js';
 
-export { User };
+// The User type is derived from the Session['user'] type to avoid a runtime import error,
+// as 'User' is a type-only export from the supabase-js library.
+export type User = NonNullable<Session['user']>;
 
 export enum Persona {
   Moderator = 'Moderatör',

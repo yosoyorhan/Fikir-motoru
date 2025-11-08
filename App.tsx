@@ -12,6 +12,7 @@ import ImagePreview from './components/ImagePreview';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
+import RLSHelpModal from './components/RLSHelpModal';
 import { AppState, Message, Persona, SavedIdea, PersonaFocus, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, User, Profile } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
@@ -19,6 +20,68 @@ import { PERSONA_DEFINITIONS } from './constants';
 import { supabase } from './services/supabaseClient';
 
 const GUEST_QUERY_LIMIT = 3;
+
+const RLS_POLICY_SQL = `-- Bu komut dosyası, uygulamanın veritabanınızla doğru şekilde etkileşime girmesi için
+-- gerekli olan Satır Seviyesi Güvenlik (RLS) politikalarını ayarlar.
+-- Lütfen bu kodun tamamını kopyalayıp Supabase projenizdeki SQL Editor'de çalıştırın.
+
+-- 1. PROFILES tablosu için RLS'yi etkinleştirin (zaten etkinse bir şey yapmaz)
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- 2. IDEAS tablosu için RLS'yi etkinleştirin (zaten etkinse bir şey yapmaz)
+ALTER TABLE public.ideas ENABLE ROW LEVEL SECURITY;
+
+-- --- ÖNCEKİ POLİTİKALARI TEMİZLEME (Çakışmaları önlemek için) ---
+DROP POLICY IF EXISTS "Kullanıcılar kendi profillerini görebilir" ON public.profiles;
+DROP POLICY IF EXISTS "Kullanıcılar kendi profillerini güncelleyebilir" ON public.profiles;
+DROP POLICY IF EXISTS "Kullanıcılar kendi profillerini oluşturabilir" ON public.profiles;
+DROP POLICY IF EXISTS "Kullanıcılar kendi fikirlerini görebilir" ON public.ideas;
+DROP POLICY IF EXISTS "Kullanıcılar fikir oluşturabilir" ON public.ideas;
+DROP POLICY IF EXISTS "Kullanıcılar kendi fikirlerini güncelleyebilir" ON public.ideas;
+DROP POLICY IF EXISTS "Kullanıcılar kendi fikirlerini silebilir" ON public.ideas;
+
+-- --- PROFILES TABLOSU İÇİN YENİ POLİTİKALAR ---
+
+-- Politika: Kullanıcıların kendi profillerini oluşturmasına izin ver.
+-- Bu, otomatik profil oluşturma tetikleyicisi başarısız olursa bir yedek görevi görür.
+CREATE POLICY "Kullanıcılar kendi profillerini oluşturabilir"
+ON public.profiles FOR INSERT
+WITH CHECK (auth.uid() = id);
+
+-- Politika: Kullanıcıların yalnızca kendi profil verilerini okumasına izin ver.
+CREATE POLICY "Kullanıcılar kendi profillerini görebilir"
+ON public.profiles FOR SELECT
+USING (auth.uid() = id);
+
+-- Politika: Kullanıcıların yalnızca kendi profil verilerini güncellemesine izin ver.
+CREATE POLICY "Kullanıcılar kendi profillerini güncelleyebilir"
+ON public.profiles FOR UPDATE
+USING (auth.uid() = id);
+
+-- --- IDEAS TABLOSU İÇİN YENİ POLİTİKALAR ---
+
+-- Politika: Kullanıcıların yalnızca kendi fikirlerini okumasına izin ver.
+CREATE POLICY "Kullanıcılar kendi fikirlerini görebilir"
+ON public.ideas FOR SELECT
+USING (auth.uid() = user_id);
+
+-- Politika: Kullanıcıların kendi adlarına yeni fikirler eklemesine izin ver.
+CREATE POLICY "Kullanıcılar fikir oluşturabilir"
+ON public.ideas FOR INSERT
+WITH CHECK (auth.uid() = user_id);
+
+-- Politika: Kullanıcıların yalnızca kendi fikirlerini güncellemesine izin ver.
+CREATE POLICY "Kullanıcılar kendi fikirlerini güncelleyebilir"
+ON public.ideas FOR UPDATE
+USING (auth.uid() = user_id);
+
+-- Politika: Kullanıcıların yalnızca kendi fikirlerini silebilir"
+ON public.ideas FOR DELETE
+USING (auth.uid() = user_id);
+
+-- Bilgilendirme: Bu politikalar, her kullanıcının yalnızca kendi verilerine
+-- erişebilmesini sağlayarak uygulamanızın güvenliğini artırır.
+`;
 
 const App: React.FC = () => {
   // Auth & User State
@@ -42,6 +105,7 @@ const App: React.FC = () => {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [chatBackground, setChatBackground] = useState<string | null>(null);
+  const [isRlsHelpModalOpen, setIsRlsHelpModalOpen] = useState(false);
 
   // Data State
   const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>([]);
@@ -74,7 +138,7 @@ const App: React.FC = () => {
   const mainContentRef = useRef<HTMLElement>(null);
   const prevScrollHeightRef = useRef<number | null>(null);
 
-  // --- TOASTS ---
+  // --- TOASTS & MODALS ---
   const addToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = `toast-${Date.now()}`;
     setToasts(prev => [...prev, { id, message, type }]);
@@ -82,6 +146,10 @@ const App: React.FC = () => {
   
   const removeToast = useCallback((id: string) => {
     setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  const handleRlsError = useCallback(() => {
+    setIsRlsHelpModalOpen(true);
   }, []);
 
   // --- AUTH & DATA SYNC ---
@@ -110,7 +178,42 @@ const App: React.FC = () => {
   const fetchProfile = useCallback(async (user: User): Promise<Profile | null> => {
     try {
         const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-        if (error) throw error;
+        
+        // PostgREST error for no rows found, meaning profile creation trigger might have failed
+        if (error && error.code === 'PGRST116') {
+            console.log('No profile found, attempting to create one as a fallback...');
+            const { data: newProfile, error: insertError } = await supabase
+                .from('profiles')
+                .insert({ 
+                    id: user.id, 
+                    username: user.user_metadata.username || `user_${user.id.substring(0, 8)}`,
+                })
+                .select()
+                .single();
+            
+            if (insertError) {
+                console.error("Error creating fallback profile:", JSON.stringify(insertError, null, 2));
+                if (insertError.code === '42501' || insertError.message.includes('permission denied')) {
+                    addToast('Profil oluşturulamadı. Lütfen veritabanı izinlerinizi kontrol edin.', 'error');
+                    handleRlsError();
+                } else {
+                    addToast(`Profil oluşturulurken bir hata oluştu: ${insertError.message}`, 'error');
+                }
+                return null;
+            }
+
+            if (newProfile) {
+                console.log('Fallback profile created successfully.');
+                addToast('Profiliniz oluşturuldu!', 'success');
+                setProfile(newProfile);
+                setTheme(newProfile.theme || 'dark');
+                return newProfile;
+            }
+        } else if (error) {
+            // Handle other errors, like the original permission denied
+            throw error;
+        }
+
         if (data) {
             setProfile(data);
             setTheme(data.theme || 'dark');
@@ -118,10 +221,14 @@ const App: React.FC = () => {
         }
     } catch (error: any) {
         console.error("Error fetching profile:", JSON.stringify(error, null, 2));
-        addToast(`Kullanıcı profili alınırken hata: ${error.message}`, 'error');
+        if (error.code === '42501' || error.message.includes('permission denied')) {
+            handleRlsError();
+        } else {
+            addToast(`Kullanıcı profili alınırken hata: ${error.message}`, 'error');
+        }
     }
     return null;
-  }, [addToast]);
+  }, [addToast, handleRlsError]);
   
   const fetchIdeas = useCallback(async (user: User) => {
     try {
@@ -132,9 +239,13 @@ const App: React.FC = () => {
         }
     } catch (error: any) {
         console.error("Error fetching ideas:", JSON.stringify(error, null, 2));
-        addToast(`Kaydedilen fikirler alınırken hata: ${error.message}`, 'error');
+        if (error.code === '42501' || error.message.includes('permission denied')) {
+            handleRlsError();
+        } else {
+            addToast(`Kaydedilen fikirler alınırken hata: ${error.message}`, 'error');
+        }
     }
-  }, [addToast]);
+  }, [addToast, handleRlsError]);
 
   useEffect(() => {
     if (session?.user) {
@@ -426,12 +537,16 @@ const App: React.FC = () => {
       setSavedIdeas(prev => [foundIdea, ...prev].filter((i): i is SavedIdea => i !== null));
     } else if (session?.user && profile) {
       const { data, error } = await supabase.from('ideas').insert({ ...foundIdea, user_id: session.user.id }).select();
-      if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
       if (error) {
-        addToast('Fikir kaydedilemedi.', 'error');
+        if (error.code === '42501' || error.message.includes('permission denied')) {
+            handleRlsError();
+        } else {
+            addToast('Fikir kaydedilemedi.', 'error');
+        }
         console.error(error);
         return;
       }
+      if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
       
       // Update points
       const newPoints = (profile.points || 0) + 50;
@@ -443,7 +558,11 @@ const App: React.FC = () => {
         .single();
       
       if (profileError) {
-        addToast('Puan güncellenemedi.', 'error');
+        if (profileError.code === '42501' || profileError.message.includes('permission denied')) {
+            handleRlsError();
+        } else {
+            addToast('Puan güncellenemedi.', 'error');
+        }
         console.error(profileError);
       } else if (updatedProfile) {
         setProfile(updatedProfile);
@@ -458,7 +577,7 @@ const App: React.FC = () => {
     setAppState(AppState.IDLE);
     setMessages([]);
     setChatBackground(null);
-  }, [foundIdea, addToast, session, profile, isGuest]);
+  }, [foundIdea, addToast, session, profile, isGuest, handleRlsError]);
 
   const handleRejectIdea = useCallback(async () => {
     if (!foundIdea) return;
@@ -502,8 +621,16 @@ const App: React.FC = () => {
     const newSavedIdea: SavedIdea = { id: ideaToSave.id, title: ideaToSave.title, description: ideaToSave.details, topic: ideaToSave.topic, status: 'Havuz (Kasa)', conversation: ideaToSave.conversation };
     if (session?.user) {
         const { data, error } = await supabase.from('ideas').insert({ ...newSavedIdea, user_id: session.user.id }).select();
+        if (error) {
+            if (error.code === '42501' || error.message.includes('permission denied')) {
+                handleRlsError();
+            } else {
+                addToast('Fikir kaydedilemedi.', 'error');
+            }
+            console.error(error);
+            return;
+        }
         if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
-        if (error) { addToast('Fikir kaydedilemedi.', 'error'); console.error(error); }
     } else {
         setSavedIdeas(prev => [newSavedIdea, ...prev]); // Guest
     }
@@ -516,7 +643,11 @@ const App: React.FC = () => {
       if (session?.user) {
           const { error } = await supabase.from('ideas').update({ status: newStatus }).eq('id', ideaId).eq('user_id', session.user.id);
           if (error) {
-              addToast('Fikir durumu güncellenemedi.', 'error');
+              if (error.code === '42501' || error.message.includes('permission denied')) {
+                handleRlsError();
+              } else {
+                addToast('Fikir durumu güncellenemedi.', 'error');
+              }
               fetchIdeas(session.user); // Revert on error
           }
       }
@@ -679,6 +810,13 @@ const App: React.FC = () => {
         user={user}
         profile={profile}
         onProfileUpdate={handleProfileUpdate}
+        onRlsError={handleRlsError}
+      />
+
+      <RLSHelpModal 
+        isOpen={isRlsHelpModalOpen}
+        onClose={() => setIsRlsHelpModalOpen(false)}
+        sqlToFix={RLS_POLICY_SQL}
       />
 
       <div className="fixed top-5 right-5 z-[100] space-y-2">

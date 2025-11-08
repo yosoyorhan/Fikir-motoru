@@ -8,9 +8,10 @@ interface ProfileModalProps {
   user: User | null;
   profile: Profile | null;
   onProfileUpdate: (updatedProfile: Partial<Profile>) => void;
+  onRlsError: () => void;
 }
 
-const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user, profile, onProfileUpdate }) => {
+const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user, profile, onProfileUpdate, onRlsError }) => {
   const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -36,7 +37,12 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user, prof
       .single();
 
     if (error) {
-      setMessage(`Hata: ${error.message}`);
+        if (error.code === '42501' || error.message.includes('permission denied')) {
+            onClose(); // Close this modal first
+            onRlsError(); // Trigger the help modal in App.tsx
+        } else {
+            setMessage(`Hata: ${error.message}`);
+        }
     } else if (data) {
       onProfileUpdate(data);
       setMessage('Profil başarıyla güncellendi!');
@@ -90,7 +96,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose, user, prof
             </div>
           </div>
           
-          {message && <p className="text-green-500 text-sm text-center">{message}</p>}
+          {message && <p className={message.startsWith('Hata') ? 'text-red-500 text-sm text-center' : 'text-green-500 text-sm text-center'}>{message}</p>}
 
           <button
             type="submit"
