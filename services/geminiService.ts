@@ -1,19 +1,28 @@
 // This file handles all interactions with the Google Gemini API.
-import { GoogleGenAI, Type, Modality } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { Message, Persona, PersonaFocus, ExtractedIdea } from '../types';
 import { PERSONA_DEFINITIONS } from '../constants';
 
+// Fallback API key for development - DO NOT USE IN PRODUCTION
+const FALLBACK_API_KEY = 'AIzaSyCXkwNjljqx8EuLgkuqyvNZZWKi1khELww';
 
-let ai: GoogleGenAI | null = null;
+// Get environment variable or use fallback
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || FALLBACK_API_KEY;
 
-export const initializeGeminiClient = (apiKey: string) => {
-  if (!apiKey) {
-    const errorMsg = "API Anahtarı, başlatma için gereklidir.";
-    console.error(errorMsg);
-    throw new Error(errorMsg);
-  }
-  ai = new GoogleGenAI({apiKey: apiKey});
-};
+// Show warning if using fallback value
+if (!import.meta.env.VITE_GEMINI_API_KEY) {
+  console.warn(
+    'Using fallback Gemini API key. To use your own API key:',
+    '\n1. Open your .env file',
+    '\n2. Add your Gemini API key:',
+    '\n   VITE_GEMINI_API_KEY=your-api-key',
+    '\n3. Restart the development server',
+    '\n\nCurrent key:', GEMINI_API_KEY.substring(0, 10) + '...'
+  );
+}
+
+// Initialize Gemini client with API key
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 const getAiClient = (): GoogleGenAI => {
   if (!ai) {
