@@ -8,15 +8,14 @@ import SessionEndModal from './components/SessionEndModal';
 import IdeaDetailModal from './components/IdeaDetailModal';
 import Toast from './components/Toast';
 import ImagePreview from './components/ImagePreview';
-import ApiKeyModal from './components/ApiKeyModal';
 import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
+import { API_KEY } from './config';
 import { PERSONA_DEFINITIONS } from './constants';
 
 const App: React.FC = () => {
   // Core App State
-  const [isApiKeySet, setIsApiKeySet] = useState(false);
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentTopic, setCurrentTopic] = useState('');
@@ -75,15 +74,10 @@ const App: React.FC = () => {
   }, [theme]);
 
   useEffect(() => {
-    const apiKey = sessionStorage.getItem('gemini-api-key');
-    if (apiKey) {
-      try {
-        initializeGeminiClient(apiKey);
-        setIsApiKeySet(true);
-      } catch (error) {
-        console.error("API anahtarı ile başlatma başarısız oldu:", error);
-        sessionStorage.removeItem('gemini-api-key'); // Clear invalid key
-      }
+    try {
+      initializeGeminiClient(API_KEY);
+    } catch (error) {
+      console.error("API anahtarı ile başlatma başarısız oldu:", error);
     }
   }, []);
 
@@ -140,18 +134,6 @@ const App: React.FC = () => {
     // Auto remove toast after 5 seconds for cleanliness
     setTimeout(() => removeToast(id), 5000);
   }, []);
-
-  const handleApiKeySubmit = (apiKey: string) => {
-    try {
-      initializeGeminiClient(apiKey);
-      sessionStorage.setItem('gemini-api-key', apiKey);
-      setIsApiKeySet(true);
-      addToast('API Anahtarı başarıyla ayarlandı!', 'success');
-    } catch (error) {
-      console.error("API anahtarı ile başlatma başarısız oldu:", error);
-      // Further error handling can be added here, e.g., in the modal
-    }
-  };
 
   const runBackgroundTask = useCallback(async (script: string) => {
     setAppState(AppState.LOADING);
@@ -538,10 +520,6 @@ const App: React.FC = () => {
     setIsCollectionOpen(false);
   };
   const handleIdeaStatusChange = (ideaId: string, newStatus: IdeaStatus) => setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
-
-  if (!isApiKeySet) {
-    return <ApiKeyModal onApiKeySubmit={handleApiKeySubmit} />;
-  }
 
   return (
     <div 
