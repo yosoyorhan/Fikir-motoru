@@ -45,3 +45,15 @@ body {
     box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
     transform: scale(1.05);
 }
+
+.lucide-icon-wrapper svg {
+  stroke-width: 2px;
+  color: #C9C9C9;
+  transition: all 0.2s ease-in-out;
+}
+
+.lucide-icon-wrapper:hover svg {
+  transform: scale(1.1);
+  color: #A78BFA;
+  filter: drop-shadow(0 0 5px #7C3AED);
+}
