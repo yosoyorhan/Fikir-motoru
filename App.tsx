@@ -22,7 +22,7 @@ const App: React.FC = () => {
   const [activePersonas, setActivePersonas] = useState<Persona[]>([]);
 
   // UI State
-  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark');
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
   const [isCollectionOpen, setIsCollectionOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
@@ -526,6 +526,7 @@ const App: React.FC = () => {
       className={`app-container bg-[var(--bg-primary)] text-[var(--text-primary)] font-sans transition-all duration-500 ${chatBackground ? 'chat-with-bg' : ''}`}
       style={{ backgroundImage: chatBackground ? `url(${chatBackground})` : 'none' }}
     >
+      <div className="background-animation"></div>
       <div className="relative z-10 flex flex-col h-screen">
         <Header 
           appState={appState}
@@ -554,7 +555,7 @@ const App: React.FC = () => {
                         className="w-24 h-24 animate-pulse-icon"
                       />
                     </div>
-                    <h1 className="text-3xl font-bold font-light-heading">Merhaba, ben Cerevo!</h1>
+                    <h1 className="text-3xl font-bold font-light-heading gradient-title">Merhaba, ben Cerevo!</h1>
                     <p className="text-[var(--text-secondary)] mt-2">
                         Sohbet edebilir veya bir konu girip "Fikir Bul" butonuna basarak<br/>beyin fırtınası başlatabilirsin.
                     </p>

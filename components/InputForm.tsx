@@ -215,7 +215,7 @@ const InputForm: React.FC<InputFormProps> = ({ onFindIdea, onChatMessage, onUser
                             type="button"
                             onClick={handleFindIdea}
                             disabled={!inputText.trim() || isLoading}
-                            className="flex-shrink-0 h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-white font-semibold gradient-button disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="flex-shrink-0 h-10 px-4 flex items-center justify-center gap-2 rounded-xl text-black font-semibold glass-button disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M6.343 16l-.707.707m12.728 0l-.707-.707M6.343 8l-.707-.707m12.728 0l.707.707M12 21a9 9 0 110-18 9 9 0 010 18z" />
