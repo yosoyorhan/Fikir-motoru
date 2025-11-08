@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import Header from './components/Header';
@@ -13,7 +12,7 @@ import ImagePreview from './components/ImagePreview';
 import ApiKeyModal from './components/ApiKeyModal';
 import AuthModal from './components/AuthModal';
 import ProfileModal from './components/ProfileModal';
-import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, User, Profile } from './types';
+import { AppState, Message, Persona, SavedIdea, PersonaFocus, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, User, Profile } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { PERSONA_DEFINITIONS } from './constants';
@@ -46,7 +45,6 @@ const App: React.FC = () => {
 
   // Data State
   const [savedIdeas, setSavedIdeas] = useState<SavedIdea[]>([]);
-  const [gameData, setGameData] = useState<GameData>({ points: 0, level: 'Başlangıç' });
   const [foundIdea, setFoundIdea] = useState<SavedIdea | null>(null);
   const [extractedIdeas, setExtractedIdeas] = useState<ExtractedIdea[]>([]);
   const [detailedIdea, setDetailedIdea] = useState<DetailedIdea | null>(null);
@@ -77,13 +75,13 @@ const App: React.FC = () => {
   const prevScrollHeightRef = useRef<number | null>(null);
 
   // --- TOASTS ---
-  const removeToast = useCallback((id: string) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
-
   const addToast = useCallback((message: string, type: 'success' | 'error' = 'success') => {
     const id = `toast-${Date.now()}`;
     setToasts(prev => [...prev, { id, message, type }]);
+  }, []);
+  
+  const removeToast = useCallback((id: string) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
   // --- AUTH & DATA SYNC ---
@@ -97,72 +95,79 @@ const App: React.FC = () => {
       setSession(session);
       setUser(session?.user ?? null);
       if (_event === 'SIGNED_OUT') {
-        // Reset state on logout
         setIsGuest(false);
         setSavedIdeas([]);
         setProfile(null);
-        setGameData({ points: 0, level: 'Başlangıç' });
         setTheme('dark');
+        setMessages([]);
+        setChatBackground(null);
       }
     });
 
     return () => authListener.subscription.unsubscribe();
   }, []);
 
-  const fetchProfile = useCallback(async (user: User) => {
-    const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    
-    if (data) {
-      setProfile(data);
-      setGameData({ points: data.points, level: data.level });
-      setTheme(data.theme || 'dark');
-    } else if (error) {
-      console.error("Error fetching profile:", error);
-      addToast(`Profil yüklenemedi: ${error.message}`, 'error');
+  const fetchProfile = useCallback(async (user: User): Promise<Profile | null> => {
+    try {
+        const { data, error } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (error) throw error;
+        if (data) {
+            setProfile(data);
+            setTheme(data.theme || 'dark');
+            return data;
+        }
+    } catch (error: any) {
+        console.error("Error fetching profile:", JSON.stringify(error, null, 2));
+        addToast(`Kullanıcı profili alınırken hata: ${error.message}`, 'error');
     }
+    return null;
   }, [addToast]);
   
   const fetchIdeas = useCallback(async (user: User) => {
-    const { data, error } = await supabase.from('ideas').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-    if (data) {
-      setSavedIdeas(data as SavedIdea[]);
-    } else if (error) {
-      console.error("Error fetching ideas:", error);
-      addToast(`Fikirler yüklenemedi: ${error.message}`, 'error');
+    try {
+        const { data, error } = await supabase.from('ideas').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+        if (error) throw error;
+        if (data) {
+            setSavedIdeas(data as SavedIdea[]);
+        }
+    } catch (error: any) {
+        console.error("Error fetching ideas:", JSON.stringify(error, null, 2));
+        addToast(`Kaydedilen fikirler alınırken hata: ${error.message}`, 'error');
     }
   }, [addToast]);
 
   useEffect(() => {
-    if (user) {
+    if (session?.user) {
       const syncUserData = async () => {
-        await fetchProfile(user);
-        await fetchIdeas(user);
+        const profileData = await fetchProfile(session.user);
+        if (profileData) {
+          await fetchIdeas(session.user);
+        }
       };
       syncUserData();
       setIsGuest(false);
+    } else {
+      setProfile(null);
+      setSavedIdeas([]);
     }
-  }, [user, fetchProfile, fetchIdeas]);
+  }, [session, fetchProfile, fetchIdeas]);
+
 
   useEffect(() => {
     document.documentElement.className = theme;
-    if (profile && user) {
-        if (profile.theme !== theme) {
-            supabase.from('profiles').update({ theme }).eq('id', user.id).then();
-        }
+    if (profile && user && profile.theme !== theme) {
+        supabase.from('profiles').update({ theme }).eq('id', user.id).then(({ error }) => {
+            if (error) console.error("Error updating theme:", error);
+        });
     } else if (isGuest) {
         localStorage.setItem('theme', theme);
     }
   }, [theme, profile, user, isGuest]);
 
   useEffect(() => {
-    if (savedIdeas.length > 0) {
-      vaultContents.current = savedIdeas.map(i => i.title).join(', ');
-    } else {
-      vaultContents.current = '';
-    }
+    vaultContents.current = savedIdeas.length > 0 ? savedIdeas.map(i => i.title).join(', ') : '';
   }, [savedIdeas]);
   
-  // Initialize Gemini client if API key exists in session storage
   useEffect(() => {
     const apiKey = sessionStorage.getItem('gemini-api-key');
     if (apiKey) {
@@ -416,20 +421,44 @@ const App: React.FC = () => {
 
   const handleAcceptIdea = useCallback(async () => {
     if (!foundIdea) return;
-    if (user) {
-        const { data, error } = await supabase.from('ideas').insert({ ...foundIdea, user_id: user.id }).select();
-        if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
-        if (error) { addToast('Fikir kaydedilemedi.', 'error'); console.error(error); }
+
+    if (isGuest) {
+      setSavedIdeas(prev => [foundIdea, ...prev].filter((i): i is SavedIdea => i !== null));
+    } else if (session?.user && profile) {
+      const { data, error } = await supabase.from('ideas').insert({ ...foundIdea, user_id: session.user.id }).select();
+      if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
+      if (error) {
+        addToast('Fikir kaydedilemedi.', 'error');
+        console.error(error);
+        return;
+      }
+      
+      // Update points
+      const newPoints = (profile.points || 0) + 50;
+      const { data: updatedProfile, error: profileError } = await supabase
+        .from('profiles')
+        .update({ points: newPoints })
+        .eq('id', session.user.id)
+        .select()
+        .single();
+      
+      if (profileError) {
+        addToast('Puan güncellenemedi.', 'error');
+        console.error(profileError);
+      } else if (updatedProfile) {
+        setProfile(updatedProfile);
+      }
     } else {
-        setSavedIdeas(prev => [foundIdea, ...prev]); // Guest mode saves to state
+      addToast('Fikri kaydetmek için giriş yapmalısınız.', 'error');
+      return;
     }
-    setGameData(prev => ({ ...prev, points: prev.points + 50 }));
+    
     addToast('Fikir inovasyon panosuna eklendi!', 'success');
     setFoundIdea(null);
     setAppState(AppState.IDLE);
     setMessages([]);
     setChatBackground(null);
-  }, [foundIdea, addToast, user]);
+  }, [foundIdea, addToast, session, profile, isGuest]);
 
   const handleRejectIdea = useCallback(async () => {
     if (!foundIdea) return;
@@ -471,8 +500,8 @@ const App: React.FC = () => {
 
   const handleSaveDetailedIdea = async (ideaToSave: DetailedIdea) => {
     const newSavedIdea: SavedIdea = { id: ideaToSave.id, title: ideaToSave.title, description: ideaToSave.details, topic: ideaToSave.topic, status: 'Havuz (Kasa)', conversation: ideaToSave.conversation };
-    if (user) {
-        const { data, error } = await supabase.from('ideas').insert({ ...newSavedIdea, user_id: user.id }).select();
+    if (session?.user) {
+        const { data, error } = await supabase.from('ideas').insert({ ...newSavedIdea, user_id: session.user.id }).select();
         if (data) setSavedIdeas(prev => [data[0] as SavedIdea, ...prev]);
         if (error) { addToast('Fikir kaydedilemedi.', 'error'); console.error(error); }
     } else {
@@ -483,13 +512,12 @@ const App: React.FC = () => {
   };
   
   const handleIdeaStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
-      // Optimistic UI update
       setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
-      if (user) {
-          const { error } = await supabase.from('ideas').update({ status: newStatus }).eq('id', ideaId).eq('user_id', user.id);
+      if (session?.user) {
+          const { error } = await supabase.from('ideas').update({ status: newStatus }).eq('id', ideaId).eq('user_id', session.user.id);
           if (error) {
               addToast('Fikir durumu güncellenemedi.', 'error');
-              fetchIdeas(user); // Revert on error
+              fetchIdeas(session.user); // Revert on error
           }
       }
   };
@@ -506,7 +534,7 @@ const App: React.FC = () => {
   };
 
   // --- RENDER LOGIC ---
-  if (!user && !isGuest) {
+  if (!session && !isGuest) {
     return <AuthModal onSuccess={() => {}} onGuest={() => setIsGuest(true)} />;
   }
 
