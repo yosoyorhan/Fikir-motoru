@@ -1,51 +1,47 @@
 # .github/workflows/main.yml
 
-# İş akışının adı (GitHub Actions arayüzünde görünür)
-name: Node.js CI (Sürekli Entegrasyon)
+name: Fikir-motoru CI/CD
 
-# Bu iş akışının ne zaman tetikleneceğini belirler
+# main dalına push veya pull request geldiğinde tetiklenir
 on:
-  # "main" dalına (branch) kod itildiğinde (push)
   push:
     branches: [ "main" ]
-  # "main" dalına bir birleştirme isteği (pull request) açıldığında
   pull_request:
     branches: [ "main" ]
 
-# İş akışının yapacağı işleri tanımlar
 jobs:
-  # "build" adında bir iş (job) tanımlıyoruz
-  build:
-    # Bu işin çalışacağı işletim sistemini belirtir (en güncel Ubuntu)
+  build-and-test:
+    # En güncel Ubuntu sürümünde çalıştır
     runs-on: ubuntu-latest
 
-    # Strateji: Bu işi farklı Node.js sürümleri için paralel olarak çalıştır
     strategy:
       matrix:
-        node-version: [18.x, 20.x] # Node.js 18 ve 20 sürümleriyle test et
+        # Projenizin desteklediği Node.js sürümleriyle test edin
+        node-version: [18.x, 20.x]
 
-    # İşin adımları (steps)
     steps:
       # 1. Adım: Kodu (repository) sanal makineye indirir
       - name: Kodu al (Checkout)
         uses: actions/checkout@v4
 
-      # 2. Adım: Belirlenen Node.js sürümünü kurar
+      # 2. Adım: Node.js'i kurar
       - name: Node.js ${{ matrix.node-version }} sürümünü kur
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          # 'npm' paketlerini önbelleğe al (cache) - daha hızlı kurulum için
+          # Burası hatayı aldığınız yer. 
+          # package-lock.json dosyasını eklediğinizde burası düzelecektir.
           cache: 'npm'
 
-      # 3. Adım: Proje bağımlılıklarını yükler (package-lock.json'a göre)
+      # 3. Adım: Bağımlılıkları yükle (Hızlı ve tutarlı 'ci' komutu ile)
+      # 'npm install' YERİNE 'npm ci' KULLANIN
       - name: Bağımlılıkları yükle
         run: npm ci
 
-      # 4. Adım: Projeyi derler/inşa eder (eğer package.json'da "build" script'i varsa)
-      - name: Build (Yapılandırma)
+      # 4. Adım: Build script'i varsa çalıştır (örn: React, Vue, TS projeleri için)
+      - name: Projeyi derle (Build)
         run: npm run build --if-present
 
-      # 5. Adım: Testleri çalıştırır
+      # 5. Adım: Testleri çalıştır
       - name: Testleri çalıştır
         run: npm test
