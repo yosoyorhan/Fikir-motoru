@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Session } from '@supabase/supabase-js';
 import Header from './components/Header';
 import InputForm from './components/InputForm';
+import { AuthTest } from './components/AuthTest';
 import ChatBubble, { PersonaIcon } from './components/ChatBubble';
 import CollectionModal from './components/CollectionModal';
 import IdeaFoundModal from './components/IdeaFoundModal';
