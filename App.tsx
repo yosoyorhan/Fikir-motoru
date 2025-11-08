@@ -8,13 +8,14 @@ import SessionEndModal from './components/SessionEndModal';
 import IdeaDetailModal from './components/IdeaDetailModal';
 import Toast from './components/Toast';
 import ImagePreview from './components/ImagePreview';
-import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea } from './types';
+import { AppState, Message, Persona, SavedIdea, PersonaFocus, GameData, Theme, ToastState, IdeaStatus, ExtractedIdea, DetailedIdea, Profile } from './types';
 import { initializeGeminiClient, generateFullConversationScript, generatePersonaTurn, getRateLimitSummary, summarizeAndExtractIdeas, detailElicitedIdea, generateCerevoResponse, generateTopicImage } from './services/geminiService';
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { API_KEY } from './config';
 import { PERSONA_DEFINITIONS } from './constants';
 import { auth, db } from './services/supabaseService';
 import AuthModal from './components/AuthModal';
+import ProfileModal from './components/ProfileModal';
 import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
@@ -33,7 +34,10 @@ const App: React.FC = () => {
 
   // Auth State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [loading, setLoading] = useState(true);
 
 
   // Data State
@@ -81,24 +85,27 @@ const App: React.FC = () => {
   }, [theme]);
 
   useEffect(() => {
+    setLoading(true);
     try {
       initializeGeminiClient(API_KEY);
     } catch (error) {
       console.error("API anahtarı ile başlatma başarısız oldu:", error);
     }
 
-    const subscription = auth.onAuthStateChange((_session) => {
-      setSession(_session);
-      if (_session) {
-        fetchUserData(_session.user.id);
+    const subscription = auth.onAuthStateChange(async (_event, session) => {
+      setSession(session);
+      if (session) {
+        await fetchUserData(session.user.id);
       } else {
         // Load from localStorage for guests
         const localIdeas = localStorage.getItem('savedIdeas');
         setSavedIdeas(localIdeas ? JSON.parse(localIdeas) : []);
         const localGameData = localStorage.getItem('gameData');
         setGameData(localGameData ? JSON.parse(localGameData) : { points: 100, level: 'Başlangıç' });
+        setProfile(null);
       }
       setIsAuthModalOpen(false); // Close modal on successful auth
+      setLoading(false);
     });
 
     return () => {
@@ -108,10 +115,12 @@ const App: React.FC = () => {
 
   const fetchUserData = async (userId: string) => {
     try {
-      const [ideas, gameData] = await Promise.all([
+      const [profileData, ideas, gameData] = await Promise.all([
+        db.getProfile(userId),
         db.getSavedIdeas(userId),
         db.getGameData(userId)
       ]);
+      setProfile(profileData);
       setSavedIdeas(ideas);
       if (gameData) setGameData(gameData);
     } catch (error) {
@@ -127,13 +136,14 @@ const App: React.FC = () => {
     vaultContents.current = savedIdeas.map(i => i.title).join(', ');
   }, [savedIdeas, session]);
 
+  const { points, level } = gameData;
   useEffect(() => {
     if (session) {
-      db.updateGameData(gameData, session.user.id);
+      db.updateGameData({ points, level }, session.user.id);
     } else {
-      localStorage.setItem('gameData', JSON.stringify(gameData));
+      localStorage.setItem('gameData', JSON.stringify({ points, level }));
     }
-  }, [gameData, session]);
+  }, [points, level, session]);
 
   const scrollToBottom = useCallback(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -593,17 +603,17 @@ const App: React.FC = () => {
     addToast(`"${idea.title}" ana odak olarak ayarlandı!`, 'success');
     setIsCollectionOpen(false);
   };
-  const handleIdeaStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
+  const handleIdeaStatusChange = async (ideaId: number, newStatus: IdeaStatus) => {
       if (session) {
           try {
               const updatedIdea = await db.updateIdeaStatus(ideaId, newStatus, session.user.id);
-              setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? updatedIdea : idea));
+              setSavedIdeas(prev => prev.map(idea => idea.id === updatedIdea.id ? updatedIdea : idea));
           } catch (error) {
               console.error("Error updating idea status:", error);
               addToast('Fikir durumu güncellenirken bir hata oluştu.', 'error');
           }
       } else {
-        setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
+        setSavedIdeas(prev => prev.map(idea => idea.id === ideaId.toString() ? { ...idea, status: newStatus } : idea));
       }
   };
 
@@ -630,6 +640,7 @@ const App: React.FC = () => {
           toggleTheme={toggleTheme}
           session={session}
           onLoginClick={() => setIsAuthModalOpen(true)}
+          onProfileClick={() => setIsProfileModalOpen(true)}
         />
         <main ref={mainContentRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="container mx-auto max-w-3xl flex-1">
@@ -746,6 +757,16 @@ const App: React.FC = () => {
       />
 
       <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
+
+      {session && (
+        <ProfileModal
+          isOpen={isProfileModalOpen}
+          onClose={() => setIsProfileModalOpen(false)}
+          session={session}
+          profile={profile}
+          onProfileUpdate={setProfile}
+        />
+      )}
 
       <div className="fixed top-5 right-5 z-[100] space-y-2">
         {toasts.map(toast => <Toast key={toast.id} {...toast} onClose={() => removeToast(toast.id)} />)}

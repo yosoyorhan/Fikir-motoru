@@ -16,6 +16,7 @@ interface HeaderProps {
   toggleTheme: () => void;
   session: Session | null;
   onLoginClick: () => void;
+  onProfileClick: () => void;
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -27,7 +28,8 @@ const Header: React.FC<HeaderProps> = ({
   theme,
   toggleTheme,
   session,
-  onLoginClick
+  onLoginClick,
+  onProfileClick
 }) => {
   const isBrainstorming = appState === AppState.BRAINSTORMING;
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -100,6 +102,16 @@ const Header: React.FC<HeaderProps> = ({
                     <div className="px-4 py-2 text-sm text-[var(--text-secondary)] truncate">
                       {session.user.email}
                     </div>
+                    <button
+                      onClick={() => {
+                        onProfileClick();
+                        setIsMenuOpen(false);
+                      }}
+                      className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                    >
+                      <Icon icon={UserIcon} size={16} />
+                      Profil
+                    </button>
                     <button
                       onClick={handleLogout}
                       className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"

@@ -14,21 +14,29 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
 
   const handleAuthAction = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    setSuccess(null);
 
     try {
-      const { error } = isSignUp
-        ? await auth.signUp({ email, password })
-        : await auth.signInWithPassword({ email, password });
-
-      if (error) {
-        setError(error.message);
+      if (isSignUp) {
+        const { error } = await auth.signUp({ email, password });
+        if (error) {
+          setError(error.message);
+        } else {
+          setSuccess('Hesabınız oluşturuldu! Lütfen e-postanızı kontrol ederek hesabınızı doğrulayın.');
+        }
       } else {
-        onClose();
+        const { error } = await auth.signInWithPassword({ email, password });
+        if (error) {
+          setError(error.message);
+        } else {
+          onClose();
+        }
       }
     } catch (err: any) {
       setError(err.message);
@@ -60,71 +68,76 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
         </div>
 
         {error && <p className="bg-red-500/20 text-red-400 text-sm p-3 rounded-lg mb-4 text-center">{error}</p>}
+        {success && <p className="bg-green-500/20 text-green-400 text-sm p-3 rounded-lg mb-4 text-center">{success}</p>}
 
-        <form onSubmit={handleAuthAction}>
-          <div className="space-y-4">
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]">
-                <Icon icon={Mail} size={20} />
-              </span>
-              <input
-                type="email"
-                placeholder="E-posta"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-[#A78BFA] transition-colors"
-                required
-              />
+        {!success && (
+          <>
+            <form onSubmit={handleAuthAction}>
+              <div className="space-y-4">
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]">
+                    <Icon icon={Mail} size={20} />
+                  </span>
+                  <input
+                    type="email"
+                    placeholder="E-posta"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-[#A78BFA] transition-colors"
+                    required
+                  />
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]">
+                    <Icon icon={Lock} size={20} />
+                  </span>
+                  <input
+                    type="password"
+                    placeholder="Şifre"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-[#A78BFA] transition-colors"
+                    required
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full mt-6 bg-gradient-to-r from-[#A78BFA] to-[#7C3AED] text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Icon icon={isSignUp ? UserPlus : LogIn} size={20} />
+                {loading ? 'İşleniyor...' : (isSignUp ? 'Hesap Oluştur' : 'Giriş Yap')}
+              </button>
+            </form>
+
+            <div className="flex items-center my-6">
+                <hr className="flex-grow border-t border-[var(--border-color)]" />
+                <span className="mx-4 text-xs text-[var(--text-secondary)]">VEYA</span>
+                <hr className="flex-grow border-t border-[var(--border-color)]" />
             </div>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-secondary)]">
-                <Icon icon={Lock} size={20} />
-              </span>
-              <input
-                type="password"
-                placeholder="Şifre"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] rounded-lg py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-[#A78BFA] transition-colors"
-                required
-              />
+
+            <button
+                onClick={handleGoogleSignIn}
+                disabled={loading}
+                className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold py-3 rounded-lg hover:bg-[var(--border-color)] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              <img src="https://psikominik.com/test/Google__G__logo.svg.png" alt="Google logo" className="w-5 h-5"/>
+              Google ile Devam Et
+            </button>
+
+            <div className="text-center mt-6">
+              <button onClick={() => { setIsSignUp(!isSignUp); setError(null); setSuccess(null); }} className="text-sm text-[var(--text-secondary)] hover:text-[#A78BFA] transition-colors">
+                {isSignUp ? 'Zaten hesabınız var mı? Giriş Yapın.' : 'Hesabınız yok mu? Oluşturun.'}
+              </button>
             </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full mt-6 bg-gradient-to-r from-[#A78BFA] to-[#7C3AED] text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center justify-center gap-2"
-          >
-            <Icon icon={isSignUp ? UserPlus : LogIn} size={20} />
-            {loading ? 'İşleniyor...' : (isSignUp ? 'Hesap Oluştur' : 'Giriş Yap')}
-          </button>
-        </form>
-
-        <div className="flex items-center my-6">
-            <hr className="flex-grow border-t border-[var(--border-color)]" />
-            <span className="mx-4 text-xs text-[var(--text-secondary)]">VEYA</span>
-            <hr className="flex-grow border-t border-[var(--border-color)]" />
-        </div>
-
-        <button
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            className="w-full bg-[var(--bg-primary)] border border-[var(--border-color)] text-[var(--text-primary)] font-bold py-3 rounded-lg hover:bg-[var(--border-color)] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-        >
-          <img src="https://psikominik.com/test/Google__G__logo.svg.png" alt="Google logo" className="w-5 h-5"/>
-          Google ile Devam Et
-        </button>
-
-        <div className="text-center mt-6">
-          <button onClick={() => setIsSignUp(!isSignUp)} className="text-sm text-[var(--text-secondary)] hover:text-[#A78BFA] transition-colors">
-            {isSignUp ? 'Zaten hesabınız var mı? Giriş Yapın.' : 'Hesabınız yok mu? Oluşturun.'}
-          </button>
-        </div>
+          </>
+        )}
 
         <div className="text-center mt-8">
             <button onClick={onClose} className="text-xs text-[var(--text-secondary)] hover:underline">
-                Misafir olarak devam et
+                {success ? 'Kapat' : 'Misafir olarak devam et'}
             </button>
         </div>
       </div>

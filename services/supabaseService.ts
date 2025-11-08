@@ -1,6 +1,6 @@
 import { createClient, Session, User } from '@supabase/supabase-js';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config';
-import { SavedIdea, GameData } from '../types';
+import { SavedIdea, GameData, Profile } from '../types';
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   throw new Error('Supabase URL and Anon Key must be provided in config.ts');
@@ -26,6 +26,25 @@ export const auth = {
 };
 
 export const db = {
+  getProfile: async (userId: string): Promise<Profile | null> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  updateProfile: async (userId: string, profileData: Partial<Profile>): Promise<Profile> => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(profileData)
+      .eq('id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
   getSavedIdeas: async (userId: string): Promise<SavedIdea[]> => {
     const { data, error } = await supabase
       .from('saved_ideas')
@@ -43,7 +62,7 @@ export const db = {
     if (error) throw error;
     return data;
   },
-  updateIdeaStatus: async (ideaId: string, status: string, userId: string): Promise<SavedIdea> => {
+  updateIdeaStatus: async (ideaId: number, status: string, userId: string): Promise<SavedIdea> => {
     const { data, error } = await supabase
       .from('saved_ideas')
       .update({ status })
