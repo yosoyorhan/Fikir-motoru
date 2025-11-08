@@ -29,19 +29,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          # Burası hatayı aldığınız yer. 
-          # package-lock.json dosyasını eklediğinizde burası düzelecektir.
           cache: 'npm'
 
       # 3. Adım: Bağımlılıkları yükle (Hızlı ve tutarlı 'ci' komutu ile)
-      # 'npm install' YERİNE 'npm ci' KULLANIN
       - name: Bağımlılıkları yükle
         run: npm ci
 
-      # 4. Adım: Build script'i varsa çalıştır (örn: React, Vue, TS projeleri için)
+      # 4. Adım: Build script'i varsa çalıştır
       - name: Projeyi derle (Build)
         run: npm run build --if-present
 
-      # 5. Adım: Testleri çalıştır
+      # 5. Adım: Test script'i varsa çalıştır (DÜZELTME BURADA)
       - name: Testleri çalıştır
-        run: npm test
+        run: npm test --if-present
