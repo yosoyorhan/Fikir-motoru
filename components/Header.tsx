@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { AppState, Theme } from '../types';
 import Logo from './Logo';
 import Icon from './Icon';
-import { PlusCircle, StopCircle, Eye, Moon, Sun, Archive } from 'lucide-react';
+import { PlusCircle, StopCircle, Eye, Moon, Sun, Archive, LogIn, LogOut, User as UserIcon } from 'lucide-react';
+import { Session } from '@supabase/supabase-js';
+import { auth } from '../services/supabaseService';
 
 interface HeaderProps {
   appState: AppState;
@@ -12,10 +14,28 @@ interface HeaderProps {
   onIntervene: () => void;
   theme: Theme;
   toggleTheme: () => void;
+  session: Session | null;
+  onLoginClick: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrainstormClick, onStop, onIntervene, theme, toggleTheme }) => {
+const Header: React.FC<HeaderProps> = ({
+  appState,
+  onCollectionClick,
+  onNewBrainstormClick,
+  onStop,
+  onIntervene,
+  theme,
+  toggleTheme,
+  session,
+  onLoginClick
+}) => {
   const isBrainstorming = appState === AppState.BRAINSTORMING;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    setIsMenuOpen(false);
+  };
   
   return (
     <header className="bg-[var(--bg-primary)]/80 backdrop-blur-sm border-b border-[var(--border-color)] sticky top-0 z-10 transition-colors duration-300">
@@ -66,6 +86,40 @@ const Header: React.FC<HeaderProps> = ({ appState, onCollectionClick, onNewBrain
             >
               <Icon icon={Archive} size={24} strokeWidth={2} />
             </button>
+
+            {session ? (
+              <div className="relative">
+                <button
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className="p-2 rounded-full text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                >
+                  <Icon icon={UserIcon} size={24} />
+                </button>
+                {isMenuOpen && (
+                  <div className="absolute right-0 mt-2 w-48 bg-[var(--bg-secondary)] rounded-lg shadow-lg py-1 animate-fade-in-fast">
+                    <div className="px-4 py-2 text-sm text-[var(--text-secondary)] truncate">
+                      {session.user.email}
+                    </div>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-primary)] hover:bg-[var(--border-color)] transition-colors"
+                    >
+                      <Icon icon={LogOut} size={16} />
+                      Çıkış Yap
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                onClick={onLoginClick}
+                title="Giriş Yap"
+                className="flex items-center gap-2 text-sm px-3 py-2 rounded-full text-white bg-gradient-to-r from-[#A78BFA] to-[#7C3AED] hover:opacity-90 transition-opacity"
+              >
+                <Icon icon={LogIn} size={20} className="text-white" />
+                <span className="hidden sm:inline">Giriş Yap</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

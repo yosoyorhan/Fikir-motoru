@@ -13,6 +13,9 @@ import { initializeGeminiClient, generateFullConversationScript, generatePersona
 import { BIG_BOSS_REJECTION_TERMS, RATE_LIMIT_DOCUMENTATION } from './constants';
 import { API_KEY } from './config';
 import { PERSONA_DEFINITIONS } from './constants';
+import { auth, db } from './services/supabaseService';
+import AuthModal from './components/AuthModal';
+import { Session } from '@supabase/supabase-js';
 
 const App: React.FC = () => {
   // Core App State
@@ -27,6 +30,10 @@ const App: React.FC = () => {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [chatBackground, setChatBackground] = useState<string | null>(null);
+
+  // Auth State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
 
 
   // Data State
@@ -79,16 +86,54 @@ const App: React.FC = () => {
     } catch (error) {
       console.error("API anahtarı ile başlatma başarısız oldu:", error);
     }
+
+    const subscription = auth.onAuthStateChange((_session) => {
+      setSession(_session);
+      if (_session) {
+        fetchUserData(_session.user.id);
+      } else {
+        // Load from localStorage for guests
+        const localIdeas = localStorage.getItem('savedIdeas');
+        setSavedIdeas(localIdeas ? JSON.parse(localIdeas) : []);
+        const localGameData = localStorage.getItem('gameData');
+        setGameData(localGameData ? JSON.parse(localGameData) : { points: 100, level: 'Başlangıç' });
+      }
+      setIsAuthModalOpen(false); // Close modal on successful auth
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('savedIdeas', JSON.stringify(savedIdeas));
-    vaultContents.current = savedIdeas.map(i => i.title).join(', ');
-  }, [savedIdeas]);
+  const fetchUserData = async (userId: string) => {
+    try {
+      const [ideas, gameData] = await Promise.all([
+        db.getSavedIdeas(userId),
+        db.getGameData(userId)
+      ]);
+      setSavedIdeas(ideas);
+      if (gameData) setGameData(gameData);
+    } catch (error) {
+      console.error("Error fetching user data:", error);
+      addToast('Kullanıcı verileri alınırken bir hata oluştu.', 'error');
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem('gameData', JSON.stringify(gameData));
-  }, [gameData]);
+    if (!session) {
+        localStorage.setItem('savedIdeas', JSON.stringify(savedIdeas));
+    }
+    vaultContents.current = savedIdeas.map(i => i.title).join(', ');
+  }, [savedIdeas, session]);
+
+  useEffect(() => {
+    if (session) {
+      db.updateGameData(gameData, session.user.id);
+    } else {
+      localStorage.setItem('gameData', JSON.stringify(gameData));
+    }
+  }, [gameData, session]);
 
   const scrollToBottom = useCallback(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -435,16 +480,30 @@ const App: React.FC = () => {
       addToast('Sohbete müdahale ediyorsunuz...', 'success');
   }, [addToast]);
 
-  const handleAcceptIdea = useCallback(() => {
+  const handleAcceptIdea = useCallback(async () => {
     if (!foundIdea) return;
-    setSavedIdeas(prev => [foundIdea, ...prev]);
+    if (!session) {
+        setIsAuthModalOpen(true);
+        addToast('Fikirleri kaydetmek için giriş yapmalısınız.', 'error');
+        return;
+    }
+
+    try {
+        const newIdea = await db.addSavedIdea(foundIdea, session.user.id);
+        setSavedIdeas(prev => [newIdea, ...prev]);
+    } catch (error) {
+        console.error("Error saving idea:", error);
+        addToast('Fikir kaydedilirken bir hata oluştu.', 'error');
+        return;
+    }
+
     setGameData(prev => ({ ...prev, points: prev.points + 50 }));
     addToast('Fikir inovasyon panosuna eklendi!', 'success');
     setFoundIdea(null);
     setAppState(AppState.IDLE);
     setMessages([]);
     setChatBackground(null);
-  }, [foundIdea, addToast]);
+  }, [foundIdea, addToast, session]);
 
   const handleRejectIdea = useCallback(async () => {
     if (!foundIdea) return;
@@ -496,7 +555,13 @@ const App: React.FC = () => {
     addToast("Oturum sonlandırıldı.", "success");
   };
 
-  const handleSaveDetailedIdea = (ideaToSave: DetailedIdea) => {
+  const handleSaveDetailedIdea = async (ideaToSave: DetailedIdea) => {
+    if (!session) {
+        setIsAuthModalOpen(true);
+        addToast('Fikirleri kaydetmek için giriş yapmalısınız.', 'error');
+        return;
+    }
+
     const newSavedIdea: SavedIdea = {
         id: ideaToSave.id,
         title: ideaToSave.title,
@@ -505,7 +570,16 @@ const App: React.FC = () => {
         status: 'Havuz (Kasa)',
         conversation: ideaToSave.conversation,
     };
-    setSavedIdeas(prev => [newSavedIdea, ...prev]);
+
+    try {
+        const savedIdea = await db.addSavedIdea(newSavedIdea, session.user.id);
+        setSavedIdeas(prev => [savedIdea, ...prev.filter(i => i.id !== savedIdea.id)]);
+    } catch (error) {
+        console.error("Error saving detailed idea:", error);
+        addToast('Detaylı fikir kaydedilirken bir hata oluştu.', 'error');
+        return;
+    }
+
     addToast(`"${ideaToSave.title}" inovasyon panosuna eklendi!`, 'success');
     setDetailedIdea(null);
   };
@@ -519,7 +593,19 @@ const App: React.FC = () => {
     addToast(`"${idea.title}" ana odak olarak ayarlandı!`, 'success');
     setIsCollectionOpen(false);
   };
-  const handleIdeaStatusChange = (ideaId: string, newStatus: IdeaStatus) => setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
+  const handleIdeaStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
+      if (session) {
+          try {
+              const updatedIdea = await db.updateIdeaStatus(ideaId, newStatus, session.user.id);
+              setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? updatedIdea : idea));
+          } catch (error) {
+              console.error("Error updating idea status:", error);
+              addToast('Fikir durumu güncellenirken bir hata oluştu.', 'error');
+          }
+      } else {
+        setSavedIdeas(prev => prev.map(idea => idea.id === ideaId ? { ...idea, status: newStatus } : idea));
+      }
+  };
 
   return (
     <div 
@@ -542,6 +628,8 @@ const App: React.FC = () => {
           onIntervene={handleIntervene}
           theme={theme}
           toggleTheme={toggleTheme}
+          session={session}
+          onLoginClick={() => setIsAuthModalOpen(true)}
         />
         <main ref={mainContentRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-4 flex flex-col">
           <div className="container mx-auto max-w-3xl flex-1">
@@ -647,7 +735,17 @@ const App: React.FC = () => {
         onSave={handleSaveDetailedIdea}
         onClose={() => setDetailedIdea(null)}
       />
-      <CollectionModal isOpen={isCollectionOpen} onClose={() => setIsCollectionOpen(false)} savedIdeas={savedIdeas} onLoadIdea={() => {}} onSetMainFocus={handleSetMainFocus} onIdeaStatusChange={handleIdeaStatusChange} />
+      <CollectionModal
+        isOpen={isCollectionOpen}
+        onClose={() => setIsCollectionOpen(false)}
+        savedIdeas={savedIdeas}
+        onLoadIdea={() => {}}
+        onSetMainFocus={handleSetMainFocus}
+        onIdeaStatusChange={handleIdeaStatusChange}
+        session={session}
+      />
+
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} />
 
       <div className="fixed top-5 right-5 z-[100] space-y-2">
         {toasts.map(toast => <Toast key={toast.id} {...toast} onClose={() => removeToast(toast.id)} />)}
